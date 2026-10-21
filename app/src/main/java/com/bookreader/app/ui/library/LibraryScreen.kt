@@ -31,6 +31,7 @@ import com.bookreader.app.ui.components.CircleIconButton
 import com.bookreader.app.ui.components.Gap
 import com.bookreader.app.ui.components.IconTileRow
 import com.bookreader.app.ui.components.PagePadding
+import com.bookreader.app.ui.components.Space
 import com.bookreader.app.ui.components.SearchHeader
 import com.bookreader.app.ui.components.SectionTitle
 import com.bookreader.app.ui.components.SurfaceCard
@@ -45,6 +46,7 @@ fun LibraryScreen(
     onBrowse: (url: String, title: String) -> Unit,
     onEdit: () -> Unit,
     onExit: () -> Unit,
+    revision: Int = 0,
     viewModel: LibraryViewModel = viewModel(factory = LibraryViewModel.Factory),
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
@@ -58,7 +60,7 @@ fun LibraryScreen(
         viewModel.searchUrl(query)?.takeIf { query.isNotBlank() }?.let { onBrowse(it, "搜索：${query.trim()}") }
     }
 
-    LaunchedEffect(libraryId) { viewModel.start(libraryId) }
+    LaunchedEffect(libraryId, revision) { viewModel.start(libraryId) }
     BackHandler(onBack = if (searching) closeSearch else onExit)
 
     LazyColumn(Modifier.fillMaxSize()) {
@@ -81,7 +83,7 @@ fun LibraryScreen(
         item {
             SectionTitle(
                 "分类与榜单",
-                Modifier.padding(start = PagePadding, end = PagePadding, top = 12.dp, bottom = 12.dp),
+                Modifier.padding(start = PagePadding, end = PagePadding, top = Space.M, bottom = Space.M),
                 trailing = state.library?.host,
                 large = true,
             )
@@ -104,15 +106,15 @@ fun LibraryScreen(
 
 @Composable
 private fun ErrorCard(message: String, onRetry: () -> Unit, onEdit: () -> Unit) {
-    SurfaceCard(Modifier.padding(horizontal = PagePadding, vertical = 8.dp)) {
-        Column(Modifier.padding(24.dp)) {
+    SurfaceCard(Modifier.padding(horizontal = PagePadding, vertical = Space.S)) {
+        Column(Modifier.padding(Space.XL)) {
             Text("连接书库失败", fontSize = 17.sp, fontWeight = FontWeight.Bold)
-            Gap(4)
+            Gap(Space.XS)
             Text(message, fontSize = 14.sp, color = MaterialTheme.colorScheme.error)
-            Gap(16)
+            Gap(Space.L)
             Row {
                 Button(onClick = onRetry, shape = CircleShape) { Text("重试") }
-                OutlinedButton(onClick = onEdit, shape = CircleShape, modifier = Modifier.padding(start = 12.dp)) {
+                OutlinedButton(onClick = onEdit, shape = CircleShape, modifier = Modifier.padding(start = Space.M)) {
                     Text("编辑书库")
                 }
             }

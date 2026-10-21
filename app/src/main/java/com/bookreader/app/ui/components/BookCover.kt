@@ -1,5 +1,6 @@
 package com.bookreader.app.ui.components
 
+import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.util.LruCache
 import androidx.compose.foundation.Canvas
@@ -56,8 +57,31 @@ fun BookCover(title: String, author: String, coverPath: String?, modifier: Modif
             }
         }
     }
+    CoverFrame(title, author, bitmap.value, modifier)
+}
+
+/**
+ * Remote cover (e.g. a Calibre library thumbnail), downloaded and decoded by [load]; shows the generated cover until it loads
+ */
+@Composable
+fun RemoteCover(
+    title: String,
+    author: String,
+    url: String?,
+    load: suspend (String) -> Bitmap?,
+    modifier: Modifier = Modifier,
+) {
+    val image = remember(url) { mutableStateOf<ImageBitmap?>(null) }
+    LaunchedEffect(url) {
+        if (url != null) image.value = load(url)?.asImageBitmap()
+    }
+    CoverFrame(title, author, image.value, modifier)
+}
+
+/** Cover frame: rounded corners + spine shadow on the left; uses the generated cover when there is no image */
+@Composable
+fun CoverFrame(title: String, author: String, image: ImageBitmap?, modifier: Modifier = Modifier) {
     Box(modifier.clip(RoundedCornerShape(6.dp))) {
-        val image = bitmap.value
         if (image != null) {
             Image(image, title, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
         } else {

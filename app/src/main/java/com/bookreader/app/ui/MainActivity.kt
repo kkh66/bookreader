@@ -5,7 +5,9 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.SystemBarStyle
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
 import androidx.compose.foundation.background
@@ -45,17 +47,21 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider.AndroidViewModelFactory.Companion.APPLICATION_KEY
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.bookreader.app.container
 import com.bookreader.app.data.SettingsRepository
 import com.bookreader.app.data.ThemeMode
+import com.bookreader.app.data.opds.OpdsParser
+import com.bookreader.app.ui.components.Space
 import com.bookreader.app.ui.discover.DiscoverScreen
 import com.bookreader.app.ui.me.MeScreen
 import com.bookreader.app.ui.opds.OpdsScreen
 import com.bookreader.app.ui.library.LibraryEditScreen
 import com.bookreader.app.ui.library.LibraryScreen
 import com.bookreader.app.ui.shelf.ShelfScreen
+import com.bookreader.app.ui.shelf.ShelfViewModel
 import com.bookreader.app.ui.stats.StatsScreen
 import com.bookreader.app.ui.theme.AppIcons
 import com.bookreader.app.ui.theme.BookReaderTheme
@@ -112,6 +118,15 @@ private fun AppRoot() {
     var browseUrl by rememberSaveable { mutableStateOf<String?>(null) }
     var browseTitle by rememberSaveable { mutableStateOf("") }
     var editLibrary by rememberSaveable { mutableStateOf<String?>(null) }
+    var libraryRevision by rememberSaveable { mutableStateOf(0) }
+    val shelfViewModel: ShelfViewModel = viewModel(factory = ShelfViewModel.Factory)
+    val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        uri?.let {
+            shelfViewModel.importEpub(it)
+            tab = Tab.Shelf
+        }
+    }
+    val importEpub = { picker.launch(arrayOf(OpdsParser.EPUB_TYPE)) }
     val background = MaterialTheme.colorScheme.background
     val tabStates = rememberSaveableStateHolder()
     val overlay = Modifier.fillMaxSize().background(background).systemBarsPadding()
@@ -120,9 +135,6 @@ private fun AppRoot() {
     val url = browseUrl
     val editing = editLibrary
     when {
-        editing != null -> Box(overlay) {
-            LibraryEditScreen(libraryId = editing.ifEmpty { null }, onDone = { editLibrary = null })
-        }
         openLibrary != null && url != null -> Box(overlay) {
             OpdsScreen(libraryId = openLibrary, startUrl = url, startTitle = browseTitle, onExit = { browseUrl = null })
         }
@@ -135,6 +147,7 @@ private fun AppRoot() {
                 },
                 onEdit = { editLibrary = openLibrary },
                 onExit = { libraryId = null },
+                revision = libraryRevision,
             )
         }
         else -> {
@@ -146,11 +159,12 @@ private fun AppRoot() {
                 Box(Modifier.padding(padding)) {
                     tabStates.SaveableStateProvider(tab.name) {
                     when (tab) {
-                        Tab.Shelf -> ShelfScreen(onOpenDiscover = { tab = Tab.Discover })
+                        Tab.Shelf -> ShelfScreen(onOpenDiscover = { tab = Tab.Discover }, onImportEpub = importEpub)
                         Tab.Discover -> DiscoverScreen(
                             onOpenLibrary = { libraryId = it },
                             onAddLibrary = { editLibrary = "" },
                             onEditLibrary = { editLibrary = it },
+                            onImportEpub = importEpub,
                         )
                         Tab.Stats -> StatsScreen()
                         Tab.Me -> MeScreen(onOpenLibraries = { tab = Tab.Discover }, onOpenStats = { tab = Tab.Stats })
@@ -159,6 +173,17 @@ private fun AppRoot() {
                 }
             }
         }
+    }
+
+    if (editing != null) {
+        LibraryEditScreen(
+            libraryId = editing.ifEmpty { null },
+            onDone = { editLibrary = null },
+            onSaved = {
+                libraryRevision++
+                editLibrary = null
+            },
+        )
     }
 }
 
@@ -181,7 +206,7 @@ private fun BottomBar(selected: Tab, onSelect: (Tab) -> Unit) {
                     Text(
                         tab.label, fontSize = 11.sp, color = color,
                         fontWeight = if (active) FontWeight.SemiBold else FontWeight.Normal,
-                        modifier = Modifier.padding(top = 2.dp),
+                        modifier = Modifier.padding(top = Space.XS),
                     )
                 }
             }

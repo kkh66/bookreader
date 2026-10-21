@@ -46,6 +46,7 @@ import com.bookreader.app.ui.components.CircleIconButton
 import com.bookreader.app.ui.components.Gap
 import com.bookreader.app.ui.components.PageHeader
 import com.bookreader.app.ui.components.PagePadding
+import com.bookreader.app.ui.components.Space
 import com.bookreader.app.ui.components.SurfaceCard
 import com.bookreader.app.ui.theme.AppIcons
 import kotlin.math.absoluteValue
@@ -58,6 +59,7 @@ fun DiscoverScreen(
     onOpenLibrary: (id: String) -> Unit,
     onAddLibrary: () -> Unit,
     onEditLibrary: (id: String) -> Unit,
+    onImportEpub: () -> Unit,
     viewModel: DiscoverViewModel = viewModel(factory = DiscoverViewModel.Factory),
 ) {
     val libraries by viewModel.items.collectAsStateWithLifecycle()
@@ -68,8 +70,8 @@ fun DiscoverScreen(
     LazyVerticalGrid(
         columns = GridCells.Adaptive(if (grid) 140.dp else 340.dp),
         contentPadding = PaddingValues(start = PagePadding, end = PagePadding, bottom = 24.dp),
-        horizontalArrangement = Arrangement.spacedBy(14.dp),
-        verticalArrangement = Arrangement.spacedBy(14.dp),
+        horizontalArrangement = Arrangement.spacedBy(Space.L),
+        verticalArrangement = Arrangement.spacedBy(Space.L),
         modifier = Modifier.fillMaxSize(),
     ) {
         item(span = { GridItemSpan(maxLineSpan) }) {
@@ -77,6 +79,11 @@ fun DiscoverScreen(
                 Box {
                     CircleIconButton(AppIcons.More, "更多") { menu = true }
                     DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
+                        DropdownMenuItem(
+                            text = { Text("导入本地 EPUB") },
+                            leadingIcon = { Icon(AppIcons.Import, null) },
+                            onClick = { menu = false; onImportEpub() },
+                        )
                         DropdownMenuItem(
                             text = { Text("添加书库") },
                             leadingIcon = { Icon(AppIcons.Library, null) },
@@ -156,7 +163,7 @@ private fun LibraryCard(
             Icon(
                 AppIcons.MoreVert, "更多",
                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.size(32.dp).clip(CircleShape).clickable { menu = true }.padding(4.dp),
+                modifier = Modifier.size(32.dp).clip(CircleShape).clickable { menu = true }.padding(Space.XS),
             )
             DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
                 DropdownMenuItem(text = { Text("编辑") }, onClick = { menu = false; onEdit() })
@@ -166,30 +173,31 @@ private fun LibraryCard(
     }
     SurfaceCard(onClick = onClick) {
         if (grid) {
-            Column(Modifier.fillMaxWidth().padding(vertical = 22.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                LibraryBadge(library, 72)
-            }
-            Row(
-                Modifier.fillMaxWidth().clip(RoundedCornerShape(bottomStart = 24.dp, bottomEnd = 24.dp))
-                    .background(MaterialTheme.colorScheme.secondaryContainer).padding(horizontal = 8.dp, vertical = 14.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                more()
-                Column(Modifier.weight(1f).padding(end = 32.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text(
-                        library.name, fontSize = 16.sp, fontWeight = FontWeight.SemiBold, textAlign = TextAlign.Center,
-                        maxLines = 2, overflow = TextOverflow.Ellipsis,
-                    )
-                    Text(
-                        library.host, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 1, overflow = TextOverflow.Ellipsis,
-                    )
+            // Top: icon, overflow menu in the top-right corner; bottom: name and address spanning the full width
+            Box(Modifier.fillMaxWidth()) {
+                Box(Modifier.fillMaxWidth().padding(vertical = Space.XL), contentAlignment = Alignment.Center) {
+                    LibraryBadge(library, 72)
                 }
+                Box(Modifier.align(Alignment.TopEnd).padding(Space.S)) { more() }
+            }
+            Column(
+                Modifier.fillMaxWidth().clip(RoundedCornerShape(bottomStart = 24.dp, bottomEnd = 24.dp))
+                    .background(MaterialTheme.colorScheme.secondaryContainer).padding(Space.M),
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                Text(
+                    library.name, fontSize = 16.sp, fontWeight = FontWeight.SemiBold, textAlign = TextAlign.Center,
+                    maxLines = 1, overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    library.host, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1, overflow = TextOverflow.Ellipsis,
+                )
             }
         } else {
-            Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+            Row(Modifier.padding(Space.L), verticalAlignment = Alignment.CenterVertically) {
                 LibraryBadge(library, 52)
-                Column(Modifier.weight(1f).padding(horizontal = 16.dp)) {
+                Column(Modifier.weight(1f).padding(horizontal = Space.L)) {
                     Text(library.name, fontSize = 17.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     Text(
                         library.host, fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -204,15 +212,15 @@ private fun LibraryCard(
 
 @Composable
 private fun EmptyLibraries(onAdd: () -> Unit) {
-    SurfaceCard(Modifier.padding(top = 16.dp)) {
-        Column(Modifier.padding(24.dp)) {
+    SurfaceCard {
+        Column(Modifier.padding(Space.XL)) {
             Text("还没有书库", fontSize = 20.sp, fontWeight = FontWeight.Bold)
-            Gap(6)
+            Gap(Space.S)
             Text(
                 "添加 Calibre / Calibre-Web 的 OPDS 地址，就能在这里浏览和下载",
                 fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
-            Gap(20)
+            Gap(Space.L)
             Button(onClick = onAdd, shape = CircleShape) { Text("添加书库") }
         }
     }

@@ -1,9 +1,7 @@
 package com.bookreader.app.ui.shelf
 
-import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.compose.foundation.background
 import androidx.activity.compose.BackHandler
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
@@ -56,7 +54,6 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.bookreader.app.data.Book
-import com.bookreader.app.data.opds.OpdsParser
 import com.bookreader.app.reader.ReaderActivity
 import com.bookreader.app.ui.components.BookCover
 import com.bookreader.app.ui.components.COVER_RATIO
@@ -65,6 +62,7 @@ import com.bookreader.app.ui.components.Gap
 import com.bookreader.app.ui.components.PageHeader
 import com.bookreader.app.ui.components.PagePadding
 import com.bookreader.app.ui.components.ProgressLine
+import com.bookreader.app.ui.components.Space
 import com.bookreader.app.ui.components.SurfaceCard
 import com.bookreader.app.ui.components.SearchHeader
 import com.bookreader.app.ui.theme.AppIcons
@@ -72,6 +70,7 @@ import com.bookreader.app.ui.theme.AppIcons
 @Composable
 fun ShelfScreen(
     onOpenDiscover: () -> Unit,
+    onImportEpub: () -> Unit,
     viewModel: ShelfViewModel = viewModel(factory = ShelfViewModel.Factory),
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
@@ -79,12 +78,7 @@ fun ShelfScreen(
     val snackbar = remember { SnackbarHostState() }
     val grid by viewModel.grid.collectAsStateWithLifecycle()
     var searching by rememberSaveable { mutableStateOf(false) }
-    var menu by remember { mutableStateOf(false) }
     var pendingDelete by remember { mutableStateOf<Book?>(null) }
-    val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-        uri?.let(viewModel::importEpub)
-    }
-    val importEpub = { picker.launch(arrayOf(OpdsParser.EPUB_TYPE)) }
     val closeSearch = {
         searching = false
         viewModel.setQuery("")
@@ -106,8 +100,8 @@ fun ShelfScreen(
             // Adaptive column count: 3 columns on a phone in portrait, more in landscape/on tablets
             columns = GridCells.Adaptive(if (grid) 92.dp else 340.dp),
             contentPadding = PaddingValues(start = PagePadding, end = PagePadding, bottom = 24.dp),
-            horizontalArrangement = Arrangement.spacedBy(16.dp),
-            verticalArrangement = Arrangement.spacedBy(if (grid) 28.dp else 0.dp),
+            horizontalArrangement = Arrangement.spacedBy(Space.L),
+            // No uniform row spacing: the gap after the title block is fixed and grid row spacing lives on GridBook itself, so the title distance matches in grid and list modes
         ) {
             fullLine {
                 if (searching) {
@@ -120,38 +114,23 @@ fun ShelfScreen(
                     )
                 } else PageHeader("书架", horizontalPadding = 0.dp) {
                     CircleIconButton(AppIcons.Search, "搜索") { searching = true }
-                    Box {
-                        CircleIconButton(AppIcons.More, "更多") { menu = true }
-                        DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
-                            DropdownMenuItem(
-                                text = { Text("导入本地 EPUB") },
-                                leadingIcon = { Icon(AppIcons.Import, null) },
-                                onClick = { menu = false; importEpub() },
-                            )
-                            DropdownMenuItem(
-                                text = { Text("Calibre 书库") },
-                                leadingIcon = { Icon(AppIcons.Discover, null) },
-                                onClick = { menu = false; onOpenDiscover() },
-                            )
-                        }
-                    }
                 }
             }
-            if (state.busy) fullLine { LinearProgressIndicator(Modifier.fillMaxWidth().padding(top = 8.dp)) }
+            if (state.busy) fullLine { LinearProgressIndicator(Modifier.fillMaxWidth().padding(top = Space.S)) }
 
             val current = state.current
             if (current != null && !searching) {
                 fullLine {
-                    Column(Modifier.padding(top = 4.dp)) {
+                    Column(Modifier.padding(top = Space.XL)) {
                         Text("继续阅读", fontSize = 24.sp, fontWeight = FontWeight.Bold)
-                        Gap(12)
+                        Gap(Space.M)
                         ContinueCard(current) { viewModel.open(current.book) }
                     }
                 }
             }
 
             if (state.total == 0) {
-                fullLine { EmptyShelf(onOpenDiscover = onOpenDiscover, onImport = importEpub) }
+                fullLine { EmptyShelf(onOpenDiscover = onOpenDiscover, onImport = onImportEpub) }
             } else {
                 fullLine {
                     AllBooksHeader(state.items.size, grid, viewModel::setGrid)
@@ -196,19 +175,19 @@ private fun ContinueCard(item: ShelfItem, onContinue: () -> Unit) {
     val book = item.book
     val secondary = MaterialTheme.colorScheme.onSurfaceVariant
     SurfaceCard(onClick = onContinue) {
-        Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+        Row(Modifier.padding(Space.L), verticalAlignment = Alignment.CenterVertically) {
             BookCover(book.title, book.author, item.coverPath, Modifier.width(52.dp).aspectRatio(COVER_RATIO))
-            Column(Modifier.weight(1f).padding(horizontal = 14.dp)) {
+            Column(Modifier.weight(1f).padding(horizontal = Space.M)) {
                 Text(book.title, fontSize = 16.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Gap(2)
+                Gap(Space.XS)
                 Text(
                     listOfNotNull(book.author.ifBlank { null }, book.chapter).joinToString(" · "),
                     fontSize = 13.sp, color = secondary, maxLines = 1, overflow = TextOverflow.Ellipsis,
                 )
-                Gap(10)
+                Gap(Space.M)
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     ProgressLine(book.progress.toFloat(), Modifier.weight(1f))
-                    Text(percent(book.progress), fontSize = 12.sp, color = secondary, modifier = Modifier.padding(start = 10.dp))
+                    Text(percent(book.progress), fontSize = 12.sp, color = secondary, modifier = Modifier.padding(start = Space.S))
                 }
             }
             Box(
@@ -223,7 +202,7 @@ private fun ContinueCard(item: ShelfItem, onContinue: () -> Unit) {
 
 @Composable
 private fun AllBooksHeader(count: Int, grid: Boolean, onGridChange: (Boolean) -> Unit) {
-    Row(Modifier.padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+    Row(Modifier.padding(top = Space.XL, bottom = Space.M), verticalAlignment = Alignment.CenterVertically) {
         Column(Modifier.weight(1f)) {
             Text("全部书籍", fontSize = 24.sp, fontWeight = FontWeight.Bold)
             Text("${count}本", fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -238,24 +217,24 @@ private fun ModeIcon(icon: androidx.compose.ui.graphics.vector.ImageVector, labe
     Icon(
         icon, label,
         tint = if (selected) MaterialTheme.colorScheme.onBackground else MaterialTheme.colorScheme.onSurfaceVariant,
-        modifier = Modifier.padding(start = 8.dp).size(40.dp).clip(CircleShape).clickable(onClick = onClick).padding(8.dp),
+        modifier = Modifier.padding(start = Space.S).size(40.dp).clip(CircleShape).clickable(onClick = onClick).padding(Space.S),
     )
 }
 
 @Composable
 private fun GridBook(item: ShelfItem, modifier: Modifier) {
     val book = item.book
-    Column(modifier) {
+    Column(Modifier.padding(bottom = Space.XL).then(modifier)) {
         BookCover(book.title, book.author, item.coverPath, Modifier.fillMaxWidth().aspectRatio(COVER_RATIO))
-        Gap(10)
+        Gap(Space.M)
         Text(book.title, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
         Text(
             book.author, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
-        Gap(10)
+        Gap(Space.M)
         ProgressLine(book.progress.toFloat(), Modifier.fillMaxWidth())
-        Gap(6)
+        Gap(Space.S)
         Text(readLabel(book), fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
@@ -266,9 +245,9 @@ private fun ListBook(item: ShelfItem, modifier: Modifier, onDelete: () -> Unit) 
     val book = item.book
     val secondary = MaterialTheme.colorScheme.onSurfaceVariant
     var menu by remember { mutableStateOf(false) }
-    Row(modifier.fillMaxWidth().padding(vertical = 12.dp)) {
+    Row(modifier.fillMaxWidth().padding(vertical = Space.M)) {
         BookCover(book.title, book.author, item.coverPath, Modifier.width(64.dp).aspectRatio(COVER_RATIO))
-        Column(Modifier.weight(1f).padding(start = 16.dp)) {
+        Column(Modifier.weight(1f).padding(start = Space.L)) {
             Row {
                 Text(
                     book.title, fontSize = 16.sp, lineHeight = 22.sp, maxLines = 2, overflow = TextOverflow.Ellipsis,
@@ -277,7 +256,7 @@ private fun ListBook(item: ShelfItem, modifier: Modifier, onDelete: () -> Unit) 
                 Box {
                     Icon(
                         AppIcons.MoreVert, "更多", tint = secondary,
-                        modifier = Modifier.size(32.dp).clip(CircleShape).clickable { menu = true }.padding(4.dp),
+                        modifier = Modifier.size(32.dp).clip(CircleShape).clickable { menu = true }.padding(Space.XS),
                     )
                     DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
                         DropdownMenuItem(text = { Text("删除") }, onClick = { menu = false; onDelete() })
@@ -285,15 +264,15 @@ private fun ListBook(item: ShelfItem, modifier: Modifier, onDelete: () -> Unit) 
                 }
             }
             Text(book.author, fontSize = 13.sp, color = secondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            Gap(10)
+            Gap(Space.M)
             Row(verticalAlignment = Alignment.CenterVertically) {
                 ProgressLine(book.progress.toFloat(), Modifier.weight(1f))
                 Text(
                     ShelfFormat.percent(book.progress), fontSize = 13.sp, color = secondary,
-                    modifier = Modifier.padding(start = 12.dp),
+                    modifier = Modifier.padding(start = Space.S),
                 )
             }
-            Gap(6)
+            Gap(Space.S)
             Text(ShelfFormat.readingLine(item.readSeconds, book.progress, book.totalChars), fontSize = 12.sp, color = secondary)
             ShelfFormat.dateRange(book.firstReadAt, book.lastReadAt)?.let {
                 Text(it, fontSize = 12.sp, color = secondary)
@@ -306,13 +285,13 @@ private fun readLabel(book: Book) = if (book.lastReadAt == 0L) "未读" else "�
 
 @Composable
 private fun EmptyShelf(onOpenDiscover: () -> Unit, onImport: () -> Unit) {
-    SurfaceCard(Modifier.padding(top = 24.dp)) {
-        Column(Modifier.padding(24.dp)) {
+    SurfaceCard(Modifier.padding(top = Space.XL)) {
+        Column(Modifier.padding(Space.XL)) {
             Text("书架还是空的", fontSize = 20.sp, fontWeight = FontWeight.Bold)
-            Gap(6)
+            Gap(Space.S)
             Text("从 Calibre 书库下载，或导入本地 EPUB", fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Gap(20)
-            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            Gap(Space.L)
+            Row(horizontalArrangement = Arrangement.spacedBy(Space.M)) {
                 Button(onClick = onOpenDiscover, shape = CircleShape) { Text("去 Calibre 书库") }
                 OutlinedButton(onClick = onImport, shape = CircleShape) { Text("导入 EPUB") }
             }

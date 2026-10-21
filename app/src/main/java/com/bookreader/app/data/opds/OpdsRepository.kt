@@ -1,6 +1,8 @@
 package com.bookreader.app.data.opds
 
+import android.graphics.Bitmap
 import com.bookreader.app.data.OpdsLibrary
+import com.bookreader.app.data.decodeScaledBitmap
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.Credentials
@@ -25,6 +27,13 @@ class OpdsRepository(private val client: OkHttpClient) {
     suspend fun <T> download(library: OpdsLibrary, url: String, block: suspend (InputStream) -> T): T =
         withContext(Dispatchers.IO) {
             call(library, url).use { block(it.body!!.byteStream()) }
+        }
+
+    /** Downloads a cover/thumbnail (also with the library's credentials), downsampled to [maxWidth]x[maxHeight]; null on failure */
+    suspend fun image(library: OpdsLibrary, url: String, maxWidth: Int, maxHeight: Int): Bitmap? =
+        withContext(Dispatchers.IO) {
+            runCatching { call(library, url).use { it.body!!.bytes() } }.getOrNull()
+                ?.let { decodeScaledBitmap(it, maxWidth, maxHeight) }
         }
 
     private fun call(library: OpdsLibrary, url: String): Response {

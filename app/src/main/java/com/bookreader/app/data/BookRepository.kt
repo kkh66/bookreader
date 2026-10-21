@@ -1,7 +1,6 @@
 package com.bookreader.app.data
 
 import android.graphics.Bitmap
-import android.graphics.BitmapFactory
 import android.util.Size
 import com.bookreader.app.reader.Readium
 import kotlinx.coroutines.Dispatchers
@@ -172,7 +171,7 @@ class BookRepository(private val dir: File, private val readium: Readium) {
         }
         for (url in candidates) {
             val bytes = readBytes(publication, url) ?: continue
-            decodeScaled(bytes)?.let { return it }
+            decodeScaledBitmap(bytes, COVER_WIDTH, COVER_HEIGHT)?.let { return it }
         }
         return null
     }
@@ -184,16 +183,6 @@ class BookRepository(private val dir: File, private val readium: Readium) {
         } finally {
             resource.close()
         }
-    }
-
-    /** Decodes downsampled to cover size so large images don't eat memory */
-    private fun decodeScaled(bytes: ByteArray): Bitmap? {
-        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-        BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
-        if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null
-        var sample = 1
-        while (bounds.outWidth / (sample * 2) >= COVER_WIDTH && bounds.outHeight / (sample * 2) >= COVER_HEIGHT) sample *= 2
-        return BitmapFactory.decodeByteArray(bytes, 0, bytes.size, BitmapFactory.Options().apply { inSampleSize = sample })
     }
 
     /** Counts the characters of the text (tags and whitespace removed), used to compute reading speed */

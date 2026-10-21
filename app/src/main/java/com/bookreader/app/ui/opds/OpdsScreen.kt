@@ -1,6 +1,25 @@
 package com.bookreader.app.ui.opds
 
 import androidx.activity.compose.BackHandler
+import android.graphics.Bitmap
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.Button
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
+import com.bookreader.app.ui.components.Gap
+import com.bookreader.app.ui.components.RemoteCover
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -35,11 +54,11 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.bookreader.app.data.opds.OpdsEntry
 import com.bookreader.app.ui.components.BackHeader
-import com.bookreader.app.ui.components.BookCover
 import com.bookreader.app.ui.components.COVER_RATIO
 import com.bookreader.app.ui.components.CircleIconButton
 import com.bookreader.app.ui.components.IconTileRow
 import com.bookreader.app.ui.components.PagePadding
+import com.bookreader.app.ui.components.Space
 import com.bookreader.app.ui.theme.AppIcons
 
 @Composable
@@ -85,13 +104,11 @@ fun OpdsScreen(
                         )
                         is OpdsEntry.Epub -> EpubRow(
                             entry,
-                            status = when (entry.downloadUrl) {
-                                in state.downloaded -> DownloadStatus.Done
-                                in state.downloading -> DownloadStatus.Running
-                                else -> DownloadStatus.None
-                            },
+                            status = state.statusOf(entry),
                             showDivider = !last,
-                            onClick = { viewModel.download(entry) },
+                            loadCover = { viewModel.cover(it, large = false) },
+                            onClick = { viewModel.select(entry) },
+                            onDownload = { viewModel.download(entry) },
                         )
                     }
                 }
@@ -109,19 +126,46 @@ fun OpdsScreen(
         }
         SnackbarHost(snackbar, Modifier.align(Alignment.BottomCenter))
     }
+
+    state.selected?.let { entry ->
+        BookDetailDialog(
+            entry,
+            status = state.statusOf(entry),
+            loadCover = { viewModel.cover(it, large = true) },
+            onDownload = { viewModel.download(entry) },
+            onDismiss = viewModel::dismissDetail,
+        )
+    }
 }
 
 private enum class DownloadStatus { None, Running, Done }
 
+private fun OpdsUiState.statusOf(entry: OpdsEntry.Epub) = when (entry.downloadUrl) {
+    in downloaded -> DownloadStatus.Done
+    in downloading -> DownloadStatus.Running
+    else -> DownloadStatus.None
+}
+
+/** Book row: tap the row for details, tap the icon on the right to download directly */
 @Composable
-private fun EpubRow(entry: OpdsEntry.Epub, status: DownloadStatus, showDivider: Boolean, onClick: () -> Unit) {
+private fun EpubRow(
+    entry: OpdsEntry.Epub,
+    status: DownloadStatus,
+    showDivider: Boolean,
+    loadCover: suspend (String) -> Bitmap?,
+    onClick: () -> Unit,
+    onDownload: () -> Unit,
+) {
     Column {
         Row(
-            Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = PagePadding, vertical = 12.dp),
+            Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = PagePadding, vertical = Space.M),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            BookCover(entry.title, entry.author, null, Modifier.width(48.dp).aspectRatio(COVER_RATIO))
-            Column(Modifier.weight(1f).padding(horizontal = 16.dp)) {
+            RemoteCover(
+                entry.title, entry.author, entry.thumbnailUrl ?: entry.coverUrl, loadCover,
+                Modifier.width(48.dp).aspectRatio(COVER_RATIO),
+            )
+            Column(Modifier.weight(1f).padding(horizontal = Space.L)) {
                 Text(entry.title, fontSize = 16.sp, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis)
                 Text(
                     entry.author, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis,
@@ -130,18 +174,113 @@ private fun EpubRow(entry: OpdsEntry.Epub, status: DownloadStatus, showDivider: 
             }
             when (status) {
                 DownloadStatus.Running -> CircularProgressIndicator(Modifier.size(22.dp), strokeWidth = 2.dp)
-                DownloadStatus.Done -> Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(AppIcons.Check, null, Modifier.size(18.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Text("已在书架", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-                DownloadStatus.None -> Icon(AppIcons.Download, "下载", Modifier.size(24.dp))
+                DownloadStatus.Done -> Icon(
+                    AppIcons.Check, "已在书架", Modifier.size(22.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                DownloadStatus.None -> Icon(
+                    AppIcons.Download, "下载",
+                    Modifier.size(40.dp).clip(CircleShape).clickable(onClick = onDownload).padding(Space.S),
+                )
             }
         }
         if (showDivider) {
             HorizontalDivider(
-                Modifier.padding(start = PagePadding + 64.dp, end = PagePadding),
+                Modifier.padding(start = PagePadding + 48.dp + Space.L, end = PagePadding),
                 color = MaterialTheme.colorScheme.outlineVariant,
             )
         }
     }
+}
+
+/** Book details dialog (like the modal on the Calibre-Web site): cover, info, tags, description, download */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun BookDetailDialog(
+    entry: OpdsEntry.Epub,
+    status: DownloadStatus,
+    loadCover: suspend (String) -> Bitmap?,
+    onDownload: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val secondary = MaterialTheme.colorScheme.onSurfaceVariant
+    val maxHeight = (LocalConfiguration.current.screenHeightDp * 0.85f).dp
+    Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+        Column(
+            Modifier.fillMaxWidth(0.92f).widthIn(max = 560.dp).heightIn(max = maxHeight)
+                .clip(RoundedCornerShape(24.dp)).background(MaterialTheme.colorScheme.surface)
+                .padding(Space.XL),
+        ) {
+            Row {
+                RemoteCover(
+                    entry.title, entry.author, entry.coverUrl ?: entry.thumbnailUrl, loadCover,
+                    Modifier.width(104.dp).aspectRatio(COVER_RATIO),
+                )
+                Column(Modifier.weight(1f).padding(start = Space.L)) {
+                    Text(entry.title, fontSize = 18.sp, fontWeight = FontWeight.Bold, maxLines = 3, overflow = TextOverflow.Ellipsis)
+                    Gap(Space.XS)
+                    Text(entry.author, fontSize = 14.sp, color = secondary, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                    val meta = listOf(entry.publisher, entry.year).filter { it.isNotBlank() }.joinToString(" · ")
+                    if (meta.isNotBlank()) {
+                        Gap(Space.S)
+                        Text(meta, fontSize = 13.sp, color = secondary, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                    }
+                    if (entry.formats.isNotEmpty()) {
+                        Gap(Space.S)
+                        FlowRow(
+                            horizontalArrangement = Arrangement.spacedBy(Space.XS),
+                            verticalArrangement = Arrangement.spacedBy(Space.XS),
+                        ) {
+                            entry.formats.forEach { Chip(it) }
+                        }
+                    }
+                }
+            }
+            if (entry.tags.isNotEmpty()) {
+                Gap(Space.L)
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(Space.S),
+                    verticalArrangement = Arrangement.spacedBy(Space.S),
+                ) {
+                    entry.tags.forEach { Chip(it) }
+                }
+            }
+            if (entry.summary.isNotBlank()) {
+                Gap(Space.L)
+                // The description can be long, so only this part scrolls and the buttons stay visible
+                Text(
+                    entry.summary, fontSize = 14.sp, lineHeight = 22.sp,
+                    modifier = Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState()),
+                )
+            }
+            Gap(Space.XL)
+            Row(horizontalArrangement = Arrangement.spacedBy(Space.M)) {
+                OutlinedButton(onClick = onDismiss, shape = CircleShape, modifier = Modifier.weight(1f)) { Text("关闭") }
+                Button(
+                    onClick = onDownload,
+                    enabled = status == DownloadStatus.None,
+                    shape = CircleShape,
+                    modifier = Modifier.weight(1f),
+                ) {
+                    Text(
+                        when (status) {
+                            DownloadStatus.None -> "下载到书架"
+                            DownloadStatus.Running -> "下载中…"
+                            DownloadStatus.Done -> "已在书架"
+                        }
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun Chip(text: String) {
+    Text(
+        text,
+        fontSize = 12.sp,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier.clip(CircleShape).background(MaterialTheme.colorScheme.surfaceVariant)
+            .padding(horizontal = Space.M, vertical = Space.XS),
+    )
 }

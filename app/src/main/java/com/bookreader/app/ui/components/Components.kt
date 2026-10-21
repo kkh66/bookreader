@@ -42,7 +42,20 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.bookreader.app.ui.theme.AppIcons
 
-val PagePadding = 24.dp
+/**
+ * Shared spacing: all paddings and gaps on every screen use only these 5 values
+ * XS between text lines · S between icon and text / small elements · M from title to content / list row vertical padding
+ * L card padding / between cards / header top padding · XL screen side margins / between sections / large card padding
+ */
+object Space {
+    val XS = 4.dp
+    val S = 8.dp
+    val M = 12.dp
+    val L = 16.dp
+    val XL = 24.dp
+}
+
+val PagePadding = Space.XL
 
 /** Large page title + subtitle, with round buttons on the right */
 @Composable
@@ -54,18 +67,18 @@ fun PageHeader(
     actions: @Composable RowScope.() -> Unit = {},
 ) {
     Row(
-        modifier.fillMaxWidth().padding(start = horizontalPadding, end = horizontalPadding, top = 20.dp, bottom = 8.dp),
+        modifier.fillMaxWidth().padding(start = horizontalPadding, end = horizontalPadding, top = Space.L),
         // Without a subtitle, the title and the buttons on the right are vertically centered
         verticalAlignment = if (subtitle == null) Alignment.CenterVertically else Alignment.Top,
     ) {
         Column(Modifier.weight(1f)) {
             Text(title, fontSize = 34.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onBackground)
             if (subtitle != null) {
-                Spacer(Modifier.height(6.dp))
+                Spacer(Modifier.height(Space.S))
                 Text(subtitle, fontSize = 15.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
-        Row(horizontalArrangement = Arrangement.spacedBy(12.dp), content = actions)
+        Row(horizontalArrangement = Arrangement.spacedBy(Space.M), content = actions)
     }
 }
 
@@ -73,7 +86,7 @@ fun PageHeader(
 @Composable
 fun BackHeader(title: String, onBack: () -> Unit, actions: @Composable RowScope.() -> Unit = {}) {
     Row(
-        Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
+        Modifier.fillMaxWidth().padding(horizontal = Space.L, vertical = Space.M),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         CircleIconButton(AppIcons.ArrowBack, "返回", onBack)
@@ -83,9 +96,9 @@ fun BackHeader(title: String, onBack: () -> Unit, actions: @Composable RowScope.
             fontWeight = FontWeight.Bold,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.weight(1f).padding(horizontal = 14.dp),
+            modifier = Modifier.weight(1f).padding(horizontal = Space.M),
         )
-        Row(horizontalArrangement = Arrangement.spacedBy(12.dp), content = actions)
+        Row(horizontalArrangement = Arrangement.spacedBy(Space.M), content = actions)
     }
 }
 
@@ -154,19 +167,25 @@ fun SettingRow(
 ) {
     Column {
         Row(
-            Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = 20.dp, vertical = 18.dp),
+            Modifier.fillMaxWidth().clickable(onClick = onClick).padding(Space.L),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Icon(icon, null, Modifier.size(24.dp), tint = MaterialTheme.colorScheme.onSurface)
-            Text(title, fontSize = 17.sp, modifier = Modifier.weight(1f).padding(start = 18.dp))
+            Text(title, fontSize = 17.sp, modifier = Modifier.weight(1f).padding(start = Space.L))
             value?.let { ValueChip(it) }
             Icon(
                 AppIcons.ChevronRight, null,
-                Modifier.padding(start = 8.dp).size(22.dp),
+                Modifier.padding(start = Space.S).size(22.dp),
                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
-        if (showDivider) HorizontalDivider(Modifier.padding(start = 62.dp, end = 20.dp), color = MaterialTheme.colorScheme.outlineVariant)
+        // The divider starts at the text: start padding + 24dp icon + icon-to-text gap
+        if (showDivider) {
+            HorizontalDivider(
+                Modifier.padding(start = Space.L + 24.dp + Space.L, end = Space.L),
+                color = MaterialTheme.colorScheme.outlineVariant,
+            )
+        }
     }
 }
 
@@ -177,7 +196,7 @@ fun ValueChip(text: String) {
         fontSize = 13.sp,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
         modifier = Modifier.clip(CircleShape).background(MaterialTheme.colorScheme.background)
-            .padding(horizontal = 12.dp, vertical = 5.dp),
+            .padding(horizontal = Space.M, vertical = Space.XS),
     )
 }
 
@@ -195,7 +214,7 @@ fun IconTileRow(
 ) {
     Column {
         Row(
-            Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = PagePadding, vertical = 12.dp),
+            Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = PagePadding, vertical = Space.M),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Box(
@@ -204,7 +223,7 @@ fun IconTileRow(
             ) {
                 Icon(icon, null, Modifier.size(26.dp), tint = MaterialTheme.colorScheme.onSurface)
             }
-            Column(Modifier.weight(1f).padding(horizontal = 16.dp)) {
+            Column(Modifier.weight(1f).padding(horizontal = Space.L)) {
                 Text(title, fontSize = 17.sp, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis)
                 if (subtitle.isNotBlank()) {
                     Text(
@@ -217,18 +236,16 @@ fun IconTileRow(
         }
         if (showDivider) {
             HorizontalDivider(
-                Modifier.padding(start = PagePadding + 68.dp, end = PagePadding),
+                Modifier.padding(start = PagePadding + 52.dp + Space.L, end = PagePadding),
                 color = MaterialTheme.colorScheme.outlineVariant,
             )
         }
     }
 }
 
+/** Vertical gap; pass only values from [Space] */
 @Composable
-fun Gap(height: Int) = Spacer(Modifier.height(height.dp))
-
-@Composable
-fun HGap(width: Int) = Spacer(Modifier.width(width.dp))
+fun Gap(height: Dp) = Spacer(Modifier.height(height))
 
 /** Row that replaces the header while searching: rounded text field + close button, focused when opened */
 @Composable
@@ -244,12 +261,12 @@ fun SearchHeader(
     val secondary = MaterialTheme.colorScheme.onSurfaceVariant
     LaunchedEffect(Unit) { focus.requestFocus() }
     Row(
-        Modifier.fillMaxWidth().padding(start = horizontalPadding, end = horizontalPadding, top = 20.dp, bottom = 8.dp),
+        Modifier.fillMaxWidth().padding(start = horizontalPadding, end = horizontalPadding, top = Space.L),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Row(
             Modifier.weight(1f).height(48.dp).clip(CircleShape)
-                .background(MaterialTheme.colorScheme.surfaceVariant).padding(horizontal = 16.dp),
+                .background(MaterialTheme.colorScheme.surfaceVariant).padding(horizontal = Space.L),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Icon(AppIcons.Search, null, Modifier.size(20.dp), tint = secondary)
@@ -261,7 +278,7 @@ fun SearchHeader(
                 cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
                 keyboardActions = KeyboardActions(onSearch = { onSearch() }),
-                modifier = Modifier.weight(1f).padding(start = 10.dp).focusRequester(focus),
+                modifier = Modifier.weight(1f).padding(start = Space.S).focusRequester(focus),
                 decorationBox = { inner ->
                     Box(contentAlignment = Alignment.CenterStart) {
                         if (query.isEmpty()) Text(placeholder, fontSize = 16.sp, color = secondary, maxLines = 1)
@@ -270,7 +287,7 @@ fun SearchHeader(
                 },
             )
         }
-        Spacer(Modifier.width(12.dp))
+        Spacer(Modifier.width(Space.M))
         CircleIconButton(AppIcons.Close, "关闭搜索", onClose)
     }
 }

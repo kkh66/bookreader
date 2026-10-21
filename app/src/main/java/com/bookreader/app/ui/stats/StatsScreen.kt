@@ -37,6 +37,7 @@ import androidx.compose.foundation.layout.aspectRatio
 import com.bookreader.app.ui.components.Gap
 import com.bookreader.app.ui.components.PageHeader
 import com.bookreader.app.ui.components.PagePadding
+import com.bookreader.app.ui.components.Space
 import com.bookreader.app.ui.components.SurfaceCard
 import java.time.LocalDate
 
@@ -48,12 +49,12 @@ fun StatsScreen(viewModel: StatsViewModel = viewModel(factory = StatsViewModel.F
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
         PageHeader("阅读统计")
         Column(
-            Modifier.padding(horizontal = PagePadding, vertical = 16.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp),
+            Modifier.padding(horizontal = PagePadding, vertical = Space.L),
+            verticalArrangement = Arrangement.spacedBy(Space.L),
         ) {
             TodayCard(summary.todaySeconds, state.today)
             SurfaceCard {
-                Column(Modifier.padding(horizontal = 24.dp, vertical = 8.dp)) {
+                Column(Modifier.padding(horizontal = Space.XL, vertical = Space.S)) {
                     Row {
                         Metric("累计阅读", duration(summary.totalSeconds))
                         Metric("阅读书籍", "${summary.bookCount} 本")
@@ -66,20 +67,20 @@ fun StatsScreen(viewModel: StatsViewModel = viewModel(factory = StatsViewModel.F
                 }
             }
             SurfaceCard {
-                Column(Modifier.padding(24.dp)) {
+                Column(Modifier.padding(Space.XL)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text("最近 7 天", fontSize = 18.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
                         Text("每日阅读时长", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
-                    Gap(20)
+                    Gap(Space.L)
                     WeekChart(summary.last7, state.today)
                 }
             }
             if (state.history.isNotEmpty()) {
                 SurfaceCard {
-                    Column(Modifier.padding(24.dp)) {
+                    Column(Modifier.padding(Space.XL)) {
                         Text("阅读记录", fontSize = 18.sp, fontWeight = FontWeight.Bold)
-                        Gap(8)
+                        Gap(Space.S)
                         state.history.forEach { RecordRow(it) }
                     }
                 }
@@ -93,15 +94,15 @@ fun StatsScreen(viewModel: StatsViewModel = viewModel(factory = StatsViewModel.F
 private fun RecordRow(item: BookTime) {
     val book = item.book
     val secondary = MaterialTheme.colorScheme.onSurfaceVariant
-    Row(Modifier.padding(vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+    Row(Modifier.padding(vertical = Space.M), verticalAlignment = Alignment.CenterVertically) {
         BookCover(book.title, book.author, item.coverPath, Modifier.width(48.dp).aspectRatio(COVER_RATIO))
-        Column(Modifier.weight(1f).padding(horizontal = 14.dp)) {
+        Column(Modifier.weight(1f).padding(horizontal = Space.M)) {
             Text(book.title, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
             Text(book.author, fontSize = 12.sp, color = secondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            Gap(8)
+            Gap(Space.S)
             Row(verticalAlignment = Alignment.CenterVertically) {
                 ProgressLine(book.progress.toFloat(), Modifier.weight(1f))
-                Text(ShelfFormat.percent(book.progress), fontSize = 12.sp, color = secondary, modifier = Modifier.padding(start = 8.dp))
+                Text(ShelfFormat.percent(book.progress), fontSize = 12.sp, color = secondary, modifier = Modifier.padding(start = Space.S))
             }
         }
         Text(duration(item.seconds), fontSize = 14.sp, color = secondary)
@@ -113,15 +114,15 @@ private fun TodayCard(seconds: Long, today: LocalDate) {
     val ink = MaterialTheme.colorScheme.inverseOnSurface
     Column(
         Modifier.fillMaxWidth().clip(RoundedCornerShape(24.dp))
-            .background(MaterialTheme.colorScheme.inverseSurface).padding(28.dp),
+            .background(MaterialTheme.colorScheme.inverseSurface).padding(Space.XL),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text("今日阅读", fontSize = 16.sp, color = ink.copy(alpha = 0.7f), modifier = Modifier.weight(1f))
             Text("${today.monthValue}月${today.dayOfMonth}日", fontSize = 14.sp, color = ink.copy(alpha = 0.7f))
         }
-        Gap(16)
+        Gap(Space.L)
         Text(todayText(seconds), fontSize = 46.sp, fontWeight = FontWeight.Bold, color = ink)
-        Gap(12)
+        Gap(Space.M)
         Text(
             if (seconds > 0) "已记录今天的阅读时长" else "今天还没开始读",
             fontSize = 14.sp,
@@ -132,9 +133,9 @@ private fun TodayCard(seconds: Long, today: LocalDate) {
 
 @Composable
 private fun androidx.compose.foundation.layout.RowScope.Metric(label: String, value: String) {
-    Column(Modifier.weight(1f).padding(vertical = 18.dp)) {
+    Column(Modifier.weight(1f).padding(vertical = Space.L)) {
         Text(label, fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Gap(8)
+        Gap(Space.S)
         Text(value, fontSize = 24.sp, fontWeight = FontWeight.Bold)
     }
 }
@@ -152,9 +153,9 @@ private fun WeekChart(days: List<DayStat>, today: LocalDate) {
                     fontSize = 12.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
-                Gap(6)
+                Gap(Space.S)
                 Bar(fraction = day.seconds.toFloat() / max, highlight = isToday)
-                Gap(8)
+                Gap(Space.S)
                 Text(
                     weekday(day.date),
                     fontSize = 13.sp,

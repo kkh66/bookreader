@@ -1,5 +1,7 @@
 package com.bookreader.app.ui.opds
 
+import android.graphics.Bitmap
+import android.util.LruCache
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider.AndroidViewModelFactory.Companion.APPLICATION_KEY
 import androidx.lifecycle.viewModelScope
@@ -30,6 +32,8 @@ data class OpdsUiState(
     val downloaded: Set<String> = emptySet(),
     val downloading: Set<String> = emptySet(),
     val message: String? = null,
+    /** Book shown in the details dialog */
+    val selected: OpdsEntry.Epub? = null,
 )
 
 /**
@@ -102,6 +106,22 @@ class OpdsViewModel(
     }
 
     fun clearMessage() = _state.update { it.copy(message = null) }
+
+    fun select(epub: OpdsEntry.Epub) = _state.update { it.copy(selected = epub) }
+
+    fun dismissDetail() = _state.update { it.copy(selected = null) }
+
+    /** Loaded covers/thumbnails, so going back a page doesn't download them again */
+    private val covers = LruCache<String, Bitmap>(80)
+
+    /** Thumbnail size for the list, full size for the dialog; null on failure (the UI shows a generated cover) */
+    suspend fun cover(url: String, large: Boolean): Bitmap? {
+        val key = "$url#$large"
+        covers.get(key)?.let { return it }
+        val library = library ?: return null
+        val (width, height) = if (large) 480 to 720 else 160 to 240
+        return opds.image(library, url, width, height)?.also { covers.put(key, it) }
+    }
 
     private fun load() {
         val level = stack.lastOrNull() ?: return
