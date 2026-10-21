@@ -12,17 +12,26 @@ import com.bookreader.app.data.Book
 import com.bookreader.app.data.BookRepository
 import com.bookreader.app.reader.ReaderRepository
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import java.io.IOException
 
+data class ShelfItem(val book: Book, val coverPath: String?)
+
 data class ShelfUiState(
-    val books: List<Book> = emptyList(),
+    val items: List<ShelfItem> = emptyList(),
+    /** Continue reading: the most recently read book */
+    val current: ShelfItem? = null,
+    val total: Int = 0,
+    val query: String = "",
     val busy: Boolean = false,
     val message: String? = null,
 )
@@ -33,16 +42,40 @@ class ShelfViewModel(
     private val resolver: ContentResolver,
 ) : ViewModel() {
 
+    private val query = MutableStateFlow("")
     private val busy = MutableStateFlow(false)
     private val message = MutableStateFlow<String?>(null)
 
-    val state = combine(books.books, busy, message) { list, busy, message ->
-        ShelfUiState(list.sortedByDescending { it.addedAt }, busy, message)
+    private val items = books.books
+        .map { list -> list.map { ShelfItem(it, books.cover(it)?.path) } }
+        .flowOn(Dispatchers.IO)
+
+    val state = combine(items, query, busy, message) { items, query, busy, message ->
+        val sorted = items.sortedByDescending { maxOf(it.book.lastReadAt, it.book.addedAt) }
+        ShelfUiState(
+            items = if (query.isBlank()) sorted else sorted.filter {
+                it.book.title.contains(query, ignoreCase = true) || it.book.author.contains(query, ignoreCase = true)
+            },
+            current = items.filter { it.book.lastReadAt > 0 }.maxByOrNull { it.book.lastReadAt },
+            total = items.size,
+            query = query,
+            busy = busy,
+            message = message,
+        )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), ShelfUiState())
 
     /** One-shot event to open the reader, emitted only after the Publication opened successfully */
     private val _openReader = Channel<String>(Channel.BUFFERED)
     val openReader = _openReader.receiveAsFlow()
+
+    init {
+        // Extract covers for books imported earlier
+        viewModelScope.launch { runCatching { books.ensureCovers() } }
+    }
+
+    fun setQuery(value: String) {
+        query.value = value
+    }
 
     fun open(book: Book) = launchBusy {
         reader.open(book)

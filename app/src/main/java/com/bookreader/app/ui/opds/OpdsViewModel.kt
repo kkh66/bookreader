@@ -30,13 +30,18 @@ data class OpdsUiState(
     val message: String? = null,
 )
 
+/**
+ * Calibre library browser: keeps a stack of visited folders and downloads epubs to the shelf
+ */
 class OpdsViewModel(
     private val opds: OpdsRepository,
     private val books: BookRepository,
 ) : ViewModel() {
 
-    /** Feed URLs visited so far, the last one is the current page; going back pops it */
-    private val stack = ArrayDeque<String>()
+    private data class Level(val url: String, val title: String)
+
+    /** Folders visited so far, the last one is the current page; going back pops it */
+    private val stack = ArrayDeque<Level>()
     private var loadJob: Job? = null
 
     private val _state = MutableStateFlow(OpdsUiState())
@@ -44,26 +49,25 @@ class OpdsViewModel(
         state.copy(downloaded = list.mapNotNullTo(HashSet()) { it.source })
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), OpdsUiState())
 
-    /** Called when the screen opens: start from the root on first entry or when the server URL changed */
-    fun start() {
-        val root = opds.rootUrl
-        if (stack.firstOrNull() == root) return
+    /** Called when the screen opens: restart from the entry URL when it changed */
+    fun start(url: String, title: String) {
+        if (stack.firstOrNull()?.url == url) return
         stack.clear()
-        if (root.isBlank()) {
-            _state.update { OpdsUiState(error = "请先在设置里填写 OPDS 地址") }
-            return
-        }
-        open(root)
+        _state.update { OpdsUiState() }
+        open(url, title)
     }
 
-    fun open(url: String) {
-        stack.addLast(url)
+    fun open(url: String, title: String) {
+        stack.addLast(Level(url, title))
         load()
     }
 
+    /** The next page keeps the current title */
+    fun openNext(url: String) = open(url, stack.lastOrNull()?.title.orEmpty())
+
     fun refresh() = load()
 
-    /** Go up one level; returns false at the root so the UI can exit */
+    /** Go up one level; returns false at the entry page so the UI can exit */
     fun back(): Boolean {
         if (stack.size <= 1) return false
         stack.removeLast()
@@ -92,14 +96,19 @@ class OpdsViewModel(
     fun clearMessage() = _state.update { it.copy(message = null) }
 
     private fun load() {
-        val url = stack.lastOrNull() ?: return
+        val level = stack.lastOrNull() ?: return
         loadJob?.cancel()
-        _state.update { it.copy(loading = true, error = null) }
+        _state.update { it.copy(title = level.title, loading = true, error = null) }
         loadJob = viewModelScope.launch {
             try {
-                val page = opds.load(url)
+                val page = opds.load(level.url)
                 _state.update {
-                    it.copy(title = page.title, entries = page.entries, nextUrl = page.nextUrl, loading = false)
+                    it.copy(
+                        title = level.title.ifBlank { page.title },
+                        entries = page.entries,
+                        nextUrl = page.nextUrl,
+                        loading = false,
+                    )
                 }
             } catch (e: CancellationException) {
                 throw e
