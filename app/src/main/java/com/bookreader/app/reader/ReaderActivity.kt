@@ -7,6 +7,7 @@ import android.net.Uri
 import android.os.Bundle
 import android.os.SystemClock
 import android.view.Gravity
+import android.view.KeyEvent
 import android.view.View
 import android.view.ViewGroup.LayoutParams.MATCH_PARENT
 import android.view.ViewGroup.LayoutParams.WRAP_CONTENT
@@ -27,23 +28,32 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.IconToggleButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.ComposeView
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.ViewCompositionStrategy
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.sp
 import androidx.core.view.ViewCompat
+import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
 import androidx.fragment.app.FragmentContainerView
 import androidx.fragment.app.commitNow
 import androidx.lifecycle.Lifecycle
@@ -54,11 +64,15 @@ import com.bookreader.app.container
 import com.bookreader.app.R
 import com.bookreader.app.data.Book
 import com.bookreader.app.data.Bookmark
+import com.bookreader.app.data.SettingsRepository
 import com.bookreader.app.data.ThemeMode
 import com.bookreader.app.data.bookmarkId
 import com.bookreader.app.ui.components.Space
+import com.bookreader.app.ui.shelf.ShelfFormat
 import com.bookreader.app.ui.theme.AppIcons
 import com.bookreader.app.ui.theme.BookReaderTheme
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import org.json.JSONObject
 import org.readium.r2.navigator.epub.EpubNavigatorFragment
@@ -68,6 +82,7 @@ import org.readium.r2.navigator.util.DirectionalNavigationAdapter
 import org.readium.r2.shared.ExperimentalReadiumApi
 import org.readium.r2.shared.publication.Locator
 import org.readium.r2.shared.publication.Publication
+import org.readium.r2.shared.publication.services.locateProgression
 import org.readium.r2.shared.util.AbsoluteUrl
 
 /**
@@ -80,6 +95,12 @@ class ReaderActivity : AppCompatActivity(), EpubNavigatorFragment.Listener {
     private val viewModel: ReaderViewModel by viewModels { ReaderViewModel.Factory }
     private val bookId by lazy { intent.getStringExtra(EXTRA_BOOK_ID).orEmpty() }
     private var controlsVisible = true
+
+    /** Hide the status bar while reading (a setting), show it again with the menu */
+    private var hideStatusBar = false
+
+    /** With the status bar hidden the text reaches the top edge, so the menu's top bar must leave room for the status bar itself (px) */
+    private val headerInset = mutableIntStateOf(0)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         val session = container.reader[bookId]
@@ -115,9 +136,16 @@ class ReaderActivity : AppCompatActivity(), EpubNavigatorFragment.Listener {
             addView(controls, FrameLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT, Gravity.TOP))
             addView(bottomControls, FrameLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT, Gravity.BOTTOM))
         }
+        hideStatusBar = container.settings.readerHideStatusBar.state.value
         ViewCompat.setOnApplyWindowInsetsListener(content) { view, insets ->
-            val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout())
-            view.setPadding(bars.left, bars.top, bars.right, bars.bottom)
+            // System bar insets are taken as when visible, so showing/hiding the status bar doesn't resize the text area, re-layout or jump pages
+            val bars = insets.getInsetsIgnoringVisibility(WindowInsetsCompat.Type.systemBars())
+            val cutout = insets.getInsets(WindowInsetsCompat.Type.displayCutout())
+            val statusTop = maxOf(bars.top, cutout.top)
+            // With the status bar hidden the text reaches the top edge (avoiding only the cutout); when the menu opens, the status bar overlays the text
+            val top = if (hideStatusBar) cutout.top else statusTop
+            view.setPadding(maxOf(bars.left, cutout.left), top, maxOf(bars.right, cutout.right), maxOf(bars.bottom, cutout.bottom))
+            headerInset.intValue = statusTop - top
             WindowInsetsCompat.CONSUMED
         }
         setContentView(content)
@@ -138,13 +166,15 @@ class ReaderActivity : AppCompatActivity(), EpubNavigatorFragment.Listener {
                 controlsVisible = !controlsVisible
                 controls.visibility = if (controlsVisible) View.VISIBLE else View.GONE
                 bottomControls.visibility = controls.visibility
+                updateStatusBar()
                 return true
             }
         })
 
         controls.setContent {
+            val topInset = with(LocalDensity.current) { headerInset.intValue.toDp() }
             ReaderTheme {
-                ReaderHeader(session.book.title, onBack = ::finish)
+                ReaderHeader(session.book.title, topInset, onBack = ::finish)
             }
         }
         bottomControls.setContent {
@@ -156,7 +186,8 @@ class ReaderActivity : AppCompatActivity(), EpubNavigatorFragment.Listener {
                     book = book,
                     publication = session.publication,
                     navigator = navigator,
-                    locationId = bookmarkId(locator.href.toString(), locator.locations.position, locator.locations.progression),
+                    locator = locator,
+                    onMessage = ::showMessage,
                     onToggle = { viewModel.toggleBookmark(bookId, locator, ::showMessage) },
                     onOpen = { bookmark ->
                         val target = runCatching { Locator.fromJSON(JSONObject(bookmark.locator)) }.getOrNull()
@@ -165,14 +196,56 @@ class ReaderActivity : AppCompatActivity(), EpubNavigatorFragment.Listener {
                         opened
                     },
                     onRemove = { viewModel.removeBookmark(bookId, it.id, ::showMessage) },
+                    settings = container.settings,
                 )
             }
         }
 
         lifecycleScope.launch {
             repeatOnLifecycle(Lifecycle.State.STARTED) {
-                navigator.currentLocator.collect { viewModel.saveProgress(bookId, it) }
+                launch { navigator.currentLocator.collect { viewModel.saveProgress(bookId, it) } }
+                // Toggling "hide status bar" in settings takes effect immediately
+                container.settings.readerHideStatusBar.state.collect { hide ->
+                    hideStatusBar = hide
+                    ViewCompat.requestApplyInsets(content)
+                    updateStatusBar()
+                }
             }
+        }
+    }
+
+    /** With hide status bar on, the status bar only shows while the menu is open; swiping down from the top reveals it briefly */
+    private fun updateStatusBar() {
+        val controller = WindowCompat.getInsetsController(window, window.decorView)
+        controller.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+        if (hideStatusBar && !controlsVisible) {
+            controller.hide(WindowInsetsCompat.Type.statusBars())
+        } else {
+            controller.show(WindowInsetsCompat.Type.statusBars())
+        }
+    }
+
+    override fun onKeyDown(keyCode: Int, event: KeyEvent): Boolean {
+        val forward = volumePageDirection(keyCode) ?: return super.onKeyDown(keyCode, event)
+        // Holding the key doesn't keep turning pages; one press turns one page
+        if (event.repeatCount == 0) {
+            val navigator = supportFragmentManager.findFragmentByTag(NAVIGATOR_TAG) as? EpubNavigatorFragment
+            if (forward) navigator?.goForward(animated = true) else navigator?.goBackward(animated = true)
+        }
+        return true
+    }
+
+    // Consume the key up too, otherwise the system still changes the volume
+    override fun onKeyUp(keyCode: Int, event: KeyEvent): Boolean =
+        volumePageDirection(keyCode) != null || super.onKeyUp(keyCode, event)
+
+    /** With volume key paging on: volume down = next page (true), volume up = previous page (false); null for other keys or when off */
+    private fun volumePageDirection(keyCode: Int): Boolean? {
+        if (!container.settings.volumeKeyPaging.state.value) return null
+        return when (keyCode) {
+            KeyEvent.KEYCODE_VOLUME_DOWN -> true
+            KeyEvent.KEYCODE_VOLUME_UP -> false
+            else -> null
         }
     }
 
@@ -206,6 +279,8 @@ class ReaderActivity : AppCompatActivity(), EpubNavigatorFragment.Listener {
     override fun onResume() {
         super.onResume()
         resumedAt = SystemClock.elapsedRealtime()
+        // The system may have brought the status bar back while we were in another app
+        updateStatusBar()
     }
 
     override fun onPause() {
@@ -236,9 +311,10 @@ class ReaderActivity : AppCompatActivity(), EpubNavigatorFragment.Listener {
 }
 
 @Composable
-private fun ReaderHeader(title: String, onBack: () -> Unit) {
+private fun ReaderHeader(title: String, topInset: Dp, onBack: () -> Unit) {
     Surface(color = MaterialTheme.colorScheme.background) {
-        Column {
+        // When the status bar overlays the top bar, the bar's background extends under it and the content moves down
+        Column(Modifier.padding(top = topInset)) {
             Row(
                 Modifier.fillMaxWidth().padding(horizontal = Space.S, vertical = Space.XS),
                 verticalAlignment = Alignment.CenterVertically,
@@ -258,35 +334,101 @@ private fun ReaderHeader(title: String, onBack: () -> Unit) {
     }
 }
 
+private const val SEEK_SETTLE_MS = 500L
+
+/** Bottom menu: previous chapter / whole-book progress slider / next chapter, with contents, bookmarks and reading settings below */
 @Composable
 private fun ReaderControls(
     book: Book,
     publication: Publication,
     navigator: EpubNavigatorFragment,
-    locationId: String,
+    locator: Locator,
+    onMessage: (String) -> Unit,
     onToggle: () -> Unit,
     onOpen: (Bookmark) -> Boolean,
     onRemove: (Bookmark) -> Unit,
+    settings: SettingsRepository,
 ) {
     var showingNavigation by rememberSaveable { mutableStateOf(false) }
+    var showingSettings by rememberSaveable { mutableStateOf(false) }
+    val locationId = bookmarkId(locator.href.toString(), locator.locations.position, locator.locations.progression)
     val bookmarked = book.bookmarks.any { it.id == locationId }
+    val scope = rememberCoroutineScope()
+    val chapters = remember(publication) { publication.chapters() }
+    // Slider position while dragging; after release and the jump, it waits a moment before handing back to the real progress so the slider doesn't snap back before the reading position updates
+    var seeking by remember { mutableStateOf<Float?>(null) }
+    var seekJob by remember { mutableStateOf<Job?>(null) }
+
+    // The current chapter is only accurate when read from heading positions in the page, so it's computed on button taps only, with no extra script on every page turn
+    fun goChapter(step: Int) {
+        scope.launch {
+            val current = currentChapterIndex(publication, navigator, chapters, locator)
+            val target = adjacentChapter(chapters, current, step)
+            when {
+                target == null -> onMessage(if (step < 0) "已经是第一章" else "已经是最后一章")
+                !navigator.go(target) -> onMessage("无法跳转到此章节")
+            }
+        }
+    }
+
     Surface(color = MaterialTheme.colorScheme.background) {
         Column {
             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+            seeking?.let {
+                Text(
+                    ShelfFormat.percent(it.toDouble()),
+                    fontSize = 13.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.align(Alignment.CenterHorizontally).padding(top = Space.S),
+                )
+            }
+            Row(
+                Modifier.fillMaxWidth().padding(horizontal = Space.S),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                TextButton(onClick = { goChapter(-1) }) { Text("上一章") }
+                Slider(
+                    value = seeking ?: (locator.locations.totalProgression ?: 0.0).toFloat(),
+                    onValueChange = {
+                        // Dragging again before the last release was handed back: don't let it reset the slider midway
+                        seekJob?.cancel()
+                        seeking = it
+                    },
+                    onValueChangeFinished = {
+                        seeking?.let { target ->
+                            seekJob = scope.launch {
+                                val destination = publication.locateProgression(target.toDouble())
+                                if (destination == null || !navigator.go(destination)) {
+                                    onMessage("无法跳转到此位置")
+                                } else {
+                                    delay(SEEK_SETTLE_MS)
+                                }
+                                seeking = null
+                            }
+                        }
+                    },
+                    modifier = Modifier.weight(1f).padding(horizontal = Space.XS),
+                )
+                TextButton(onClick = { goChapter(1) }) { Text("下一章") }
+            }
             Row(
                 Modifier.fillMaxWidth().padding(horizontal = Space.S, vertical = Space.XS),
                 horizontalArrangement = Arrangement.SpaceEvenly,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
+                IconButton(onClick = { showingNavigation = true }) { Icon(AppIcons.List, "目录与书签") }
                 IconToggleButton(checked = bookmarked, onCheckedChange = { onToggle() }) {
                     Icon(
                         if (bookmarked) AppIcons.Check else AppIcons.Bookmark,
                         if (bookmarked) "移除当前书签" else "添加书签",
                     )
                 }
-                IconButton(onClick = { showingNavigation = true }) { Icon(AppIcons.List, "目录与书签") }
+                IconButton(onClick = { showingSettings = true }) { Icon(AppIcons.Settings, "阅读设置") }
             }
         }
+    }
+    if (showingSettings) {
+        ReaderSettingsDialog(settings, onDismiss = { showingSettings = false })
     }
     if (showingNavigation) {
         ReaderNavigation(

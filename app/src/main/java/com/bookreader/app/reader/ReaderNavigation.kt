@@ -2,14 +2,26 @@ package com.bookreader.app.reader
 
 import android.net.Uri
 import android.widget.Toast
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
+import androidx.compose.animation.core.MutableTransitionState
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.systemBarsPadding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -25,27 +37,34 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import androidx.compose.ui.window.DialogWindowProvider
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.bookreader.app.data.Bookmark
-import com.bookreader.app.ui.components.BackHeader
 import com.bookreader.app.ui.components.Space
 import com.bookreader.app.ui.shelf.ShelfFormat
 import com.bookreader.app.ui.theme.AppIcons
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.flow.first
 import org.json.JSONArray
 import org.json.JSONObject
 import org.readium.r2.navigator.epub.EpubNavigatorFragment
@@ -53,7 +72,12 @@ import org.readium.r2.shared.ExperimentalReadiumApi
 import org.readium.r2.shared.publication.Link
 import org.readium.r2.shared.publication.Locator
 import org.readium.r2.shared.publication.Publication
+import org.readium.r2.shared.publication.services.positionsByReadingOrder
 
+/**
+ * Contents and bookmarks: a drawer sliding in from the left, about 60% of the screen wide, with the dimmed text visible on the right; tapping the text closes it
+ * Hosted in a separate dialog because the reading area is Readium's View, outside the Compose layout
+ */
 @OptIn(ExperimentalReadiumApi::class)
 @Composable
 internal fun ReaderNavigation(
@@ -65,9 +89,9 @@ internal fun ReaderNavigation(
     onDismiss: () -> Unit,
 ) {
     val context = LocalContext.current
-    val chapters = remember(publication) {
-        flattenContents(publication.tableOfContents.ifEmpty { publication.readingOrder })
-    }
+    val chapters = remember(publication) { publication.chapters() }
+    // Start page of each chapter, hidden until computed
+    val pages by produceState(emptyList<Int?>(), publication) { value = chapterPages(publication, chapters) }
     val locator by navigator.currentLocator.collectAsStateWithLifecycle()
     var selectedTab by rememberSaveable { mutableIntStateOf(0) }
     var currentChapter by remember { mutableIntStateOf(-1) }
@@ -80,63 +104,109 @@ internal fun ReaderNavigation(
         if (currentChapter >= 0) chapterList.scrollToItem(currentChapter)
     }
 
+    // Slides in on open; on close it slides out first and the dialog is dismissed when the animation ends
+    val shown = remember { MutableTransitionState(false).apply { targetState = true } }
+    val close = { shown.targetState = false }
+    val dismiss by rememberUpdatedState(onDismiss)
+    LaunchedEffect(shown) {
+        snapshotFlow { !shown.targetState && !shown.currentState && shown.isIdle }.first { it }
+        dismiss()
+    }
+
     Dialog(
-        onDismissRequest = onDismiss,
+        onDismissRequest = close,
         properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false),
     ) {
-        Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
-            Column(Modifier.systemBarsPadding()) {
-                BackHeader("目录与书签", onBack = onDismiss)
-                PrimaryTabRow(selectedTabIndex = selectedTab) {
-                    Tab(selected = selectedTab == 0, onClick = { selectedTab = 0 }, text = { Text("目录") })
-                    Tab(selected = selectedTab == 1, onClick = { selectedTab = 1 }, text = { Text("书签（${bookmarks.size}）") })
-                }
-                if (selectedTab == 0) {
-                    LazyColumn(Modifier.weight(1f), state = chapterList) {
-                        itemsIndexed(chapters) { index, (link, depth) ->
-                            val selected = index == currentChapter
-                            Row(
-                                Modifier.fillMaxWidth()
-                                    .background(if (selected) MaterialTheme.colorScheme.surfaceVariant else Color.Transparent)
-                                    .selectable(selected = selected, onClick = {
-                                        if (navigator.go(link)) onDismiss()
-                                        else Toast.makeText(context, "无法跳转到此章节", Toast.LENGTH_SHORT).show()
-                                    })
-                                    .padding(start = Space.XL + Space.L * depth, end = Space.XL, top = Space.L, bottom = Space.L),
-                                verticalAlignment = Alignment.CenterVertically,
-                            ) {
-                                Text(
-                                    link.title?.takeIf { it.isNotBlank() } ?: link.url().toString().substringAfterLast('/'),
-                                    fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
-                                    modifier = Modifier.weight(1f),
-                                )
-                                if (selected) Icon(AppIcons.Check, "当前章节", Modifier.padding(start = Space.S))
+        // The dialog's built-in full-screen dimming doesn't follow the drawer animation, so it's turned off in favor of our own scrim
+        val window = (LocalView.current.parent as? DialogWindowProvider)?.window
+        SideEffect { window?.setDimAmount(0f) }
+        val secondary = MaterialTheme.colorScheme.onSurfaceVariant
+        BoxWithConstraints(Modifier.fillMaxSize()) {
+            // About 60% of the screen, leaving the text visible on the right; at most 420dp on tablets
+            val panelWidth = minOf(maxWidth * 0.6f, 420.dp)
+            AnimatedVisibility(visibleState = shown, enter = EnterTransition.None, exit = ExitTransition.None) {
+                Box(Modifier.fillMaxSize()) {
+                    Box(
+                        Modifier.fillMaxSize()
+                            .animateEnterExit(enter = fadeIn(), exit = fadeOut())
+                            .background(Color.Black.copy(alpha = 0.4f))
+                            .clickable(interactionSource = null, indication = null, onClick = close),
+                    )
+                    Surface(
+                        Modifier.fillMaxHeight().width(panelWidth)
+                            .animateEnterExit(enter = slideInHorizontally { -it }, exit = slideOutHorizontally { -it }),
+                        color = MaterialTheme.colorScheme.background,
+                    ) {
+                        Column(Modifier.systemBarsPadding()) {
+                            PrimaryTabRow(selectedTabIndex = selectedTab, containerColor = MaterialTheme.colorScheme.background) {
+                                listOf(AppIcons.List to "目录", AppIcons.Bookmark to "书签（${bookmarks.size}）")
+                                    .forEachIndexed { index, (icon, label) ->
+                                        Tab(
+                                            selected = selectedTab == index,
+                                            onClick = { selectedTab = index },
+                                            icon = { Icon(icon, label) },
+                                            selectedContentColor = MaterialTheme.colorScheme.primary,
+                                            unselectedContentColor = secondary,
+                                        )
+                                    }
                             }
-                            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-                        }
-                    }
-                } else if (bookmarks.isEmpty()) {
-                    Text("还没有书签，点击底部的书签按钮添加", Modifier.padding(Space.XL))
-                } else {
-                    LazyColumn(Modifier.weight(1f), state = bookmarkList) {
-                        items(bookmarks, key = { it.id }) { bookmark ->
-                            Row(
-                                Modifier.fillMaxWidth().clickable {
-                                    if (onOpenBookmark(bookmark)) onDismiss()
-                                }.padding(horizontal = Space.XL, vertical = Space.S),
-                                verticalAlignment = Alignment.CenterVertically,
-                            ) {
-                                Column(Modifier.weight(1f)) {
-                                    Text(bookmark.title, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                                    Text(
-                                        "本章 ${ShelfFormat.percent(bookmark.progress)}",
-                                        fontSize = 12.sp,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    )
+                            if (selectedTab == 0) {
+                                LazyColumn(Modifier.weight(1f), state = chapterList) {
+                                    itemsIndexed(chapters) { index, (link, depth) ->
+                                        val selected = index == currentChapter
+                                        val color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
+                                        Row(
+                                            Modifier.fillMaxWidth()
+                                                .selectable(selected = selected, onClick = {
+                                                    if (navigator.go(link)) close()
+                                                    else Toast.makeText(context, "无法跳转到此章节", Toast.LENGTH_SHORT).show()
+                                                })
+                                                .padding(start = Space.L + Space.L * depth, end = Space.L, top = Space.L, bottom = Space.L),
+                                            verticalAlignment = Alignment.CenterVertically,
+                                        ) {
+                                            Text(
+                                                link.title?.takeIf { it.isNotBlank() } ?: link.url().toString().substringAfterLast('/'),
+                                                color = color,
+                                                fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
+                                                maxLines = 2,
+                                                overflow = TextOverflow.Ellipsis,
+                                                modifier = Modifier.weight(1f),
+                                            )
+                                            pages.getOrNull(index)?.let {
+                                                Text(
+                                                    "$it", fontSize = 13.sp, color = if (selected) color else secondary,
+                                                    modifier = Modifier.padding(start = Space.S),
+                                                )
+                                            }
+                                        }
+                                        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                                    }
                                 }
-                                TextButton(onClick = { onRemoveBookmark(bookmark) }) { Text("删除") }
+                            } else if (bookmarks.isEmpty()) {
+                                Text("还没有书签，点击底部的书签按钮添加", Modifier.padding(Space.L), color = secondary)
+                            } else {
+                                LazyColumn(Modifier.weight(1f), state = bookmarkList) {
+                                    items(bookmarks, key = { it.id }) { bookmark ->
+                                        Row(
+                                            Modifier.fillMaxWidth().clickable {
+                                                if (onOpenBookmark(bookmark)) close()
+                                            }.padding(start = Space.L, end = Space.XS, top = Space.S, bottom = Space.S),
+                                            verticalAlignment = Alignment.CenterVertically,
+                                        ) {
+                                            Column(Modifier.weight(1f)) {
+                                                Text(bookmark.title, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                                                Text(
+                                                    "本章 ${ShelfFormat.percent(bookmark.progress)}",
+                                                    fontSize = 12.sp,
+                                                    color = secondary,
+                                                )
+                                            }
+                                            TextButton(onClick = { onRemoveBookmark(bookmark) }) { Text("删除") }
+                                        }
+                                        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                                    }
+                                }
                             }
-                            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                         }
                     }
                 }
@@ -145,11 +215,40 @@ internal fun ReaderNavigation(
     }
 }
 
+/** Table of contents flattened into a list (chapter + depth); falls back to the reading order when there is no TOC */
+internal fun Publication.chapters(): List<Pair<Link, Int>> =
+    flattenContents(tableOfContents.ifEmpty { readingOrder })
+
 private fun flattenContents(links: List<Link>, depth: Int = 0): List<Pair<Link, Int>> =
     links.flatMap { listOf(it to depth) + flattenContents(it.children, depth + 1) }
 
+/**
+ * Previous/next chapter: from [current], search in direction [step] for the first chapter with a different href
+ * (a parent chapter and its first child often point to the same place, so skip it); before the first chapter, the next chapter is the first one
+ */
+internal fun adjacentChapter(chapters: List<Pair<Link, Int>>, current: Int, step: Int): Link? {
+    val here = chapters.getOrNull(current)?.first?.url()
+    var index = current + step
+    while (index in chapters.indices) {
+        val link = chapters[index].first
+        if (here == null || !link.url().isEquivalent(here)) return link
+        index += step
+    }
+    return null
+}
+
+/** Start page of each chapter: the first position of the chapter's resource; chapters in the same resource share a page number */
+private suspend fun chapterPages(publication: Publication, chapters: List<Pair<Link, Int>>): List<Int?> {
+    val positions = publication.positionsByReadingOrder()
+    return chapters.map { (link, _) ->
+        val href = link.url().removeFragment()
+        val resource = publication.readingOrder.indexOfFirst { it.url().isEquivalent(href) }
+        positions.getOrNull(resource)?.firstOrNull()?.locations?.position
+    }
+}
+
 @OptIn(ExperimentalReadiumApi::class)
-private suspend fun currentChapterIndex(
+internal suspend fun currentChapterIndex(
     publication: Publication,
     navigator: EpubNavigatorFragment,
     chapters: List<Pair<Link, Int>>,

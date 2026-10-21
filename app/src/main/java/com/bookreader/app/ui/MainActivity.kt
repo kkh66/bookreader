@@ -79,9 +79,14 @@ class MainActivity : ComponentActivity() {
 
     private val viewModel: MainViewModel by viewModels { MainViewModel.Factory }
 
+    /** Same instance the shelf tab gets from viewModel() (same Activity, same default key) */
+    private val shelfViewModel: ShelfViewModel by viewModels { ShelfViewModel.Factory }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
+        // Reopen the last book per the setting only on cold start, not on recreation such as rotation
+        if (savedInstanceState == null) shelfViewModel.openLastOnLaunch()
         setContent {
             val mode by viewModel.themeMode.collectAsStateWithLifecycle()
             val dark = when (mode) {

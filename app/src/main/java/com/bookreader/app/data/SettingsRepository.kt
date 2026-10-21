@@ -12,7 +12,7 @@ enum class ThemeMode(val label: String) {
 }
 
 /**
- * App settings (appearance, library layout), stored in app-private SharedPreferences
+ * App settings (appearance, library layout, reading toggles), stored in app-private SharedPreferences
  * The library list lives in [LibraryRepository]
  */
 class SettingsRepository(context: Context) {
@@ -46,6 +46,26 @@ class SettingsRepository(context: Context) {
         prefs.edit().putBoolean(KEY_LIBRARY_GRID, grid).apply()
         _libraryGrid.value = grid
     }
+
+    /** Toggle setting: stored in prefs and exposed as a StateFlow for the UI to observe */
+    inner class Toggle(private val key: String, default: Boolean) {
+        private val _state = MutableStateFlow(prefs.getBoolean(key, default))
+        val state: StateFlow<Boolean> = _state.asStateFlow()
+
+        fun set(on: Boolean) {
+            prefs.edit().putBoolean(key, on).apply()
+            _state.value = on
+        }
+    }
+
+    /** Volume keys turn pages while reading: volume down = next page, volume up = previous page */
+    val volumeKeyPaging = Toggle("volume_key_paging", default = false)
+
+    /** Go straight back to the last book read when the app opens */
+    val openLastOnLaunch = Toggle("open_last_on_launch", default = false)
+
+    /** Hide the system status bar while reading, show it again with the menu */
+    val readerHideStatusBar = Toggle("reader_hide_status_bar", default = true)
 
     /** 0.2.x had a single server stored here; unused after migrating to the library list */
     fun legacyServer(): OpdsLibrary? {

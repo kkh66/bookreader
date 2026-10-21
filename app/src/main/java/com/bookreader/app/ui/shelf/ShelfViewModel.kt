@@ -116,6 +116,12 @@ class ShelfViewModel(
 
     fun setGrid(grid: Boolean) = settings.setShelfGrid(grid)
 
+    /** Called on cold start: if "open last book on launch" is on, open the most recently read book */
+    fun openLastOnLaunch() {
+        if (!settings.openLastOnLaunch.state.value) return
+        books.books.value.filter { it.lastReadAt > 0 }.maxByOrNull { it.lastReadAt }?.let(::open)
+    }
+
     // A double tap would open two readers, and the second open would close the Publication the first one is using
     private var opening = false
     private var lastOpenAt = 0L
