@@ -1,5 +1,7 @@
 package com.bookreader.app.data
 
+import android.graphics.Bitmap
+import android.util.Size
 import com.bookreader.app.reader.Readium
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -10,6 +12,8 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
+import org.readium.r2.shared.publication.Publication
+import org.readium.r2.shared.publication.services.coverFitting
 import java.io.File
 import java.io.InputStream
 import java.util.UUID
@@ -25,21 +29,33 @@ data class Book(
     val source: String? = null,
     /** Readium Locator JSON: reading progress */
     val locator: String? = null,
+    /** Whole-book progress, 0..1 */
+    val progress: Double = 0.0,
+    /** Current chapter title */
+    val chapter: String? = null,
+    /** Last time the book was read, 0 if never */
+    val lastReadAt: Long = 0,
+    /** Whether cover extraction was attempted (books without a cover are not retried) */
+    val coverChecked: Boolean = false,
 )
 
 /**
- * Bookshelf: EPUB files live in [dir], metadata in dir/books.json
+ * Bookshelf: EPUB files live in [dir], covers in dir/covers, metadata in dir/books.json
  */
 class BookRepository(private val dir: File, private val readium: Readium) {
 
     private val json = Json { ignoreUnknownKeys = true }
     private val indexFile = File(dir, "books.json")
+    private val coverDir = File(dir, "covers")
     private val mutex = Mutex()
 
     private val _books = MutableStateFlow(load())
     val books: StateFlow<List<Book>> = _books.asStateFlow()
 
     fun file(book: Book) = File(dir, book.fileName)
+
+    /** Cover file, or null when there is none (the UI uses a generated cover) */
+    fun cover(book: Book): File? = File(coverDir, "${book.id}.jpg").takeIf { it.isFile }
 
     fun find(id: String) = _books.value.firstOrNull { it.id == id }
 
@@ -62,6 +78,7 @@ class BookRepository(private val dir: File, private val readium: Readium) {
             throw e
         }
         val book = try {
+            saveCover(id, publication)
             Book(
                 id = id,
                 title = publication.metadata.title?.takeIf { it.isNotBlank() } ?: fallbackTitle,
@@ -69,6 +86,7 @@ class BookRepository(private val dir: File, private val readium: Readium) {
                 fileName = file.name,
                 addedAt = System.currentTimeMillis(),
                 source = source,
+                coverChecked = true,
             )
         } finally {
             publication.close()
@@ -77,13 +95,45 @@ class BookRepository(private val dir: File, private val readium: Readium) {
         return book
     }
 
-    suspend fun remove(book: Book) {
-        update { list -> list.filterNot { it.id == book.id } }
-        withContext(Dispatchers.IO) { file(book).delete() }
+    /** Adds covers to books imported earlier that never had one extracted */
+    suspend fun ensureCovers() {
+        for (book in _books.value.filterNot { it.coverChecked }) {
+            runCatching {
+                val publication = readium.open(file(book))
+                try {
+                    saveCover(book.id, publication)
+                } finally {
+                    publication.close()
+                }
+            }
+            update { list -> list.map { if (it.id == book.id) it.copy(coverChecked = true) else it } }
+        }
     }
 
-    suspend fun updateLocator(id: String, locator: String) {
-        update { list -> list.map { if (it.id == id) it.copy(locator = locator) else it } }
+    suspend fun remove(book: Book) {
+        update { list -> list.filterNot { it.id == book.id } }
+        withContext(Dispatchers.IO) {
+            file(book).delete()
+            File(coverDir, "${book.id}.jpg").delete()
+        }
+    }
+
+    suspend fun updateProgress(id: String, locator: String, progress: Double, chapter: String?) {
+        val now = System.currentTimeMillis()
+        update { list ->
+            list.map {
+                if (it.id == id) it.copy(locator = locator, progress = progress, chapter = chapter, lastReadAt = now)
+                else it
+            }
+        }
+    }
+
+    private suspend fun saveCover(id: String, publication: Publication) {
+        val bitmap = publication.coverFitting(Size(COVER_WIDTH, COVER_HEIGHT)) ?: return
+        withContext(Dispatchers.IO) {
+            coverDir.mkdirs()
+            File(coverDir, "$id.jpg").outputStream().use { bitmap.compress(Bitmap.CompressFormat.JPEG, 85, it) }
+        }
     }
 
     private suspend fun update(transform: (List<Book>) -> List<Book>) = mutex.withLock {
@@ -97,4 +147,9 @@ class BookRepository(private val dir: File, private val readium: Readium) {
 
     private fun load(): List<Book> =
         runCatching { json.decodeFromString<List<Book>>(indexFile.readText()) }.getOrDefault(emptyList())
+
+    private companion object {
+        const val COVER_WIDTH = 480
+        const val COVER_HEIGHT = 720
+    }
 }

@@ -9,7 +9,7 @@ sealed interface OpdsEntry {
     val title: String
 
     /** Navigation entry: a child catalog */
-    data class Folder(override val title: String, val url: String) : OpdsEntry
+    data class Folder(override val title: String, val url: String, val summary: String = "") : OpdsEntry
 
     /** Book entry: only the epub acquisition link is kept */
     data class Epub(
@@ -20,7 +20,13 @@ sealed interface OpdsEntry {
     ) : OpdsEntry
 }
 
-data class OpdsPage(val title: String, val entries: List<OpdsEntry>, val nextUrl: String?)
+data class OpdsPage(
+    val title: String,
+    val entries: List<OpdsEntry>,
+    val nextUrl: String?,
+    /** Atom search template with a {searchTerms} placeholder; null when the server doesn't support search */
+    val searchTemplate: String? = null,
+)
 
 /**
  * OPDS 1.x (Atom) parser in plain Kotlin + Jsoup with no Android dependency, so it is easy to unit test
@@ -29,6 +35,7 @@ data class OpdsPage(val title: String, val entries: List<OpdsEntry>, val nextUrl
 object OpdsParser {
 
     const val EPUB_TYPE = "application/epub+zip"
+    private const val ATOM_TYPE = "application/atom+xml"
     private const val ACQUISITION_REL = "http://opds-spec.org/acquisition"
     private const val CATALOG_PROFILE = "profile=opds-catalog"
 
@@ -40,6 +47,11 @@ object OpdsParser {
             title = feed.childText("title"),
             entries = feed.childrenNamed("entry").mapNotNull { parseEntry(it, feedUrl) },
             nextUrl = next?.let { resolve(feedUrl, it.attr("href")) },
+            searchTemplate = feed.childrenNamed("link")
+                .firstOrNull {
+                    it.attr("rel") == "search" && it.mimeType() == ATOM_TYPE && "{searchTerms}" in it.attr("href")
+                }
+                ?.let { resolve(feedUrl, it.attr("href")) },
         )
     }
 
@@ -58,7 +70,7 @@ object OpdsParser {
         // Books with acquisition links but no epub format are skipped, not treated as folders
         if (links.any { it.attr("rel").startsWith(ACQUISITION_REL) }) return null
         return links.firstOrNull { it.attr("type").contains(CATALOG_PROFILE) }
-            ?.let { OpdsEntry.Folder(title, resolve(feedUrl, it.attr("href"))) }
+            ?.let { OpdsEntry.Folder(title, resolve(feedUrl, it.attr("href")), entry.childText("content")) }
     }
 
     private fun Element.childrenNamed(name: String) = children().filter { it.tagName() == name }

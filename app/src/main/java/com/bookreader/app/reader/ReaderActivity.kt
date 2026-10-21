@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
+import android.os.SystemClock
 import androidx.activity.viewModels
 import androidx.appcompat.app.AppCompatActivity
 import androidx.fragment.app.commitNow
@@ -56,6 +57,22 @@ class ReaderActivity : AppCompatActivity(), EpubNavigatorFragment.Listener {
             repeatOnLifecycle(Lifecycle.State.STARTED) {
                 navigator.currentLocator.collect { viewModel.saveProgress(bookId, it) }
             }
+        }
+    }
+
+    // Reading timer: time the screen is in the foreground counts as reading time
+    private var resumedAt = 0L
+
+    override fun onResume() {
+        super.onResume()
+        resumedAt = SystemClock.elapsedRealtime()
+    }
+
+    override fun onPause() {
+        super.onPause()
+        if (resumedAt > 0) {
+            viewModel.addReadingTime(bookId, (SystemClock.elapsedRealtime() - resumedAt) / 1000)
+            resumedAt = 0
         }
     }
 

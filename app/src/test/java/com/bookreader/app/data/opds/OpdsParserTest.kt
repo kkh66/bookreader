@@ -19,6 +19,7 @@ class OpdsParserTest {
           <updated>2026-10-21T07:00:00+00:00</updated>
           <link rel="self" href="/opds" type="application/atom+xml;profile=opds-catalog;kind=navigation"/>
           <link rel="search" href="/opds/osd" type="application/opensearchdescription+xml"/>
+          <link type="application/atom+xml" rel="search" title="Search" href="/opds/search/{searchTerms}" />
           <title>Calibre-Web</title>
           <entry>
             <title>Alphabetical Books</title>
@@ -70,12 +71,22 @@ class OpdsParserTest {
         assertEquals("Calibre-Web", page.title)
         assertEquals(
             listOf(
-                OpdsEntry.Folder("Alphabetical Books", "http://192.168.1.100:8083/opds/books"),
+                OpdsEntry.Folder(
+                    "Alphabetical Books",
+                    "http://192.168.1.100:8083/opds/books",
+                    "Books sorted alphabetically",
+                ),
                 OpdsEntry.Folder("Recently added Books", "http://192.168.1.100:8083/opds/new"),
             ),
             page.entries,
         )
         assertNull(page.nextUrl)
+        assertEquals("http://192.168.1.100:8083/opds/search/{searchTerms}", page.searchTemplate)
+    }
+
+    @Test
+    fun feedWithoutAtomSearchHasNoTemplate() {
+        assertNull(OpdsParser.parse(bookFeed, "$base/new").searchTemplate)
     }
 
     @Test
