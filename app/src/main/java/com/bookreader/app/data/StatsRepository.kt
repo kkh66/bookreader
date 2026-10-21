@@ -71,14 +71,11 @@ class StatsRepository(private val file: File) {
                 days = current.days + (key to (current.days[key] ?: 0L) + seconds),
                 books = current.books + (bookId to (current.books[bookId] ?: 0L) + seconds),
             )
-            withContext(Dispatchers.IO) {
-                file.parentFile?.mkdirs()
-                file.writeText(json.encodeToString(next))
-            }
+            withContext(Dispatchers.IO) { file.writeAtomically(json.encodeToString(next)) }
             _stats.value = next
         }
     }
 
     private fun load(): ReadingStats =
-        runCatching { json.decodeFromString<ReadingStats>(file.readText()) }.getOrDefault(ReadingStats())
+        file.readAtomically { json.decodeFromString<ReadingStats>(it) } ?: ReadingStats()
 }

@@ -11,6 +11,7 @@ import com.bookreader.app.data.OpdsLibrary
 import com.bookreader.app.data.opds.OpdsEntry
 import com.bookreader.app.data.opds.OpdsRepository
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -36,11 +37,13 @@ class LibraryViewModel(
 
     private val _state = MutableStateFlow(LibraryUiState())
     val state: StateFlow<LibraryUiState> = _state.asStateFlow()
+    private var loadJob: Job? = null
 
     /** Called when the screen opens: reloads only when the library or its URL/credentials changed */
     fun start(libraryId: String) {
         val library = libraries.find(libraryId)
         if (library == null) {
+            loadJob?.cancel()
             _state.value = LibraryUiState(error = "书库不存在")
             return
         }
@@ -51,8 +54,10 @@ class LibraryViewModel(
 
     fun refresh() {
         val library = _state.value.library ?: return
+        // Drop the previous request when switching libraries or refreshing again, so stale results can't overwrite the current library
+        loadJob?.cancel()
         _state.update { it.copy(loading = true, error = null) }
-        viewModelScope.launch {
+        loadJob = viewModelScope.launch {
             try {
                 val page = opds.load(library)
                 _state.update {

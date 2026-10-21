@@ -53,14 +53,11 @@ class LibraryRepository(private val file: File, settings: SettingsRepository) {
         _libraries.value = list
     }
 
-    private fun write(list: List<OpdsLibrary>) {
-        file.parentFile?.mkdirs()
-        file.writeText(json.encodeToString(list))
-    }
+    private fun write(list: List<OpdsLibrary>) = file.writeAtomically(json.encodeToString(list))
 
     private fun load(settings: SettingsRepository): List<OpdsLibrary> {
         if (file.exists()) {
-            return runCatching { json.decodeFromString<List<OpdsLibrary>>(file.readText()) }.getOrDefault(emptyList())
+            return file.readAtomically { json.decodeFromString<List<OpdsLibrary>>(it) }.orEmpty()
         }
         val migrated = listOfNotNull(settings.legacyServer())
         runCatching { write(migrated) }

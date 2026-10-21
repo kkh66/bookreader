@@ -59,10 +59,11 @@ class OpdsViewModel(
     /** Library being browsed; its credentials are used for requests */
     private var library: OpdsLibrary? = null
 
-    /** Called when the screen opens: restart from the entry URL when the library or the entry URL changed */
+    /** Called when the screen opens: restart from the entry URL when the library (including its URL/credentials) or the entry URL changed */
     fun start(libraryId: String, url: String, title: String) {
-        if (library?.id == libraryId && stack.firstOrNull()?.url == url) return
-        library = libraries.find(libraryId)
+        val current = libraries.find(libraryId)
+        if (current == library && stack.firstOrNull()?.url == url) return
+        library = current
         stack.clear()
         _state.update { OpdsUiState() }
         open(url, title)

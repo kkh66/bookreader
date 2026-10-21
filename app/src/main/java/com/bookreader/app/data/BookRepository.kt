@@ -89,11 +89,12 @@ class BookRepository(private val dir: File, private val readium: Readium) {
     suspend fun import(input: InputStream, fallbackTitle: String, source: String? = null): Book {
         val id = UUID.randomUUID().toString()
         val file = File(dir, "$id.epub")
-        withContext(Dispatchers.IO) {
-            dir.mkdirs()
-            input.use { src -> file.outputStream().use { src.copyTo(it) } }
-        }
+        // Never leave a partial file behind, whether copying fails midway (network loss, disk full, cancellation) or parsing fails
         val publication = try {
+            withContext(Dispatchers.IO) {
+                dir.mkdirs()
+                input.use { src -> file.outputStream().use { src.copyTo(it) } }
+            }
             readium.open(file)
         } catch (e: Exception) {
             file.delete()
@@ -245,15 +246,12 @@ class BookRepository(private val dir: File, private val readium: Readium) {
 
     private suspend fun update(transform: (List<Book>) -> List<Book>) = mutex.withLock {
         val list = transform(_books.value)
-        withContext(Dispatchers.IO) {
-            dir.mkdirs()
-            indexFile.writeText(json.encodeToString(list))
-        }
+        withContext(Dispatchers.IO) { indexFile.writeAtomically(json.encodeToString(list)) }
         _books.value = list
     }
 
     private fun load(): List<Book> =
-        runCatching { json.decodeFromString<List<Book>>(indexFile.readText()) }.getOrDefault(emptyList())
+        indexFile.readAtomically { json.decodeFromString<List<Book>>(it) }.orEmpty()
 
     private companion object {
         /** Cover extraction rules version: 2 = added cover page / file name fallbacks */

@@ -38,7 +38,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import java.io.File
 import kotlin.math.absoluteValue
 
 const val COVER_RATIO = 0.7f
@@ -110,7 +109,7 @@ private fun isCjk(c: Char) = Character.UnicodeScript.of(c.code).let {
 /** Generated cover: solid background + title (short Chinese titles set vertically) + author + moon and wave decorations */
 @Composable
 private fun GeneratedCover(title: String, author: String) {
-    val color = palette[title.hashCode().absoluteValue % palette.size]
+    val color = palette[title.hashCode().absoluteValue.mod(palette.size)]
     val ink = Color(0xFFF4F1E8)
     BoxWithConstraints(Modifier.fillMaxSize().background(color)) {
         val unit = maxWidth.value

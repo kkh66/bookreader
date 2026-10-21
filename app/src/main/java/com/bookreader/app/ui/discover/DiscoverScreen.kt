@@ -142,7 +142,7 @@ private val libraryColors = listOf(
 fun LibraryBadge(library: OpdsLibrary, size: Int) {
     Box(
         Modifier.size(size.dp).clip(CircleShape)
-            .background(libraryColors[library.name.hashCode().absoluteValue % libraryColors.size]),
+            .background(libraryColors[library.name.hashCode().absoluteValue.mod(libraryColors.size)]),
         contentAlignment = Alignment.Center,
     ) {
         Icon(AppIcons.Shelf, null, Modifier.size((size * 0.5f).dp), tint = Color.White)
