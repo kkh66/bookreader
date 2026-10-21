@@ -20,6 +20,20 @@ import org.jsoup.Jsoup
 import java.io.File
 import java.io.InputStream
 import java.util.UUID
+import kotlin.math.roundToLong
+
+@Serializable
+data class Bookmark(
+    val id: String,
+    val locator: String,
+    val title: String,
+    val progress: Double,
+)
+
+// Prefer the stable position so re-layout doesn't add the same bookmark twice.
+// A position may span a whole chapter, so in-chapter progress is kept too to tell pages apart.
+fun bookmarkId(href: String, position: Int?, progression: Double?): String =
+    "$href#position=${position ?: 0}#progression=${((progression ?: 0.0) * 1_000_000).roundToLong()}"
 
 @Serializable
 data class Book(
@@ -44,6 +58,7 @@ data class Book(
     val firstReadAt: Long = 0,
     /** Character count of the whole book (excluding whitespace), null if not counted yet */
     val totalChars: Long? = null,
+    val bookmarks: List<Bookmark> = emptyList(),
 )
 
 /**
@@ -147,6 +162,28 @@ class BookRepository(private val dir: File, private val readium: Readium) {
                 } else {
                     it
                 }
+            }
+        }
+    }
+
+    suspend fun toggleBookmark(bookId: String, bookmark: Bookmark): Boolean {
+        var added = false
+        update { list ->
+            require(list.any { it.id == bookId }) { "书籍已删除" }
+            list.map { book ->
+                if (book.id != bookId) book else {
+                    added = book.bookmarks.none { it.id == bookmark.id }
+                    book.copy(bookmarks = if (added) book.bookmarks + bookmark else book.bookmarks.filterNot { it.id == bookmark.id })
+                }
+            }
+        }
+        return added
+    }
+
+    suspend fun removeBookmark(bookId: String, bookmarkId: String) {
+        update { list ->
+            list.map { book ->
+                if (book.id == bookId) book.copy(bookmarks = book.bookmarks.filterNot { it.id == bookmarkId }) else book
             }
         }
     }

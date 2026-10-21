@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <item name="reader_container" type="id" />
+    <item name="reader_controls" type="id" />
+    <item name="reader_bottom_controls" type="id" />
+</resources>
