@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- The reader hosts Readium's Fragment in an AppCompatActivity, so the whole app uses an AppCompat theme -->
+    <style name="Theme.BookReader" parent="Theme.AppCompat.DayNight.NoActionBar" />
+</resources>
