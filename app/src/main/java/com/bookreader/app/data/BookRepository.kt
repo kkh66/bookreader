@@ -59,6 +59,8 @@ data class Book(
     /** Character count of the whole book (excluding whitespace), null if not counted yet */
     val totalChars: Long? = null,
     val bookmarks: List<Bookmark> = emptyList(),
+    /** Name of the user-created shelf group, null if not in a group */
+    val group: String? = null,
 )
 
 /**
@@ -165,6 +167,16 @@ class BookRepository(private val dir: File, private val readium: Readium) {
                 }
             }
         }
+    }
+
+    /** Puts books into a group (groups with the same name merge); a null [group] removes them from their group */
+    suspend fun setGroup(ids: Collection<String>, group: String?) {
+        update { list -> list.map { if (it.id in ids) it.copy(group = group) else it } }
+    }
+
+    /** Renames a group; renaming to an existing name merges into that group */
+    suspend fun renameGroup(from: String, to: String) {
+        update { list -> list.map { if (it.group == from) it.copy(group = to) else it } }
     }
 
     suspend fun toggleBookmark(bookId: String, bookmark: Bookmark): Boolean {

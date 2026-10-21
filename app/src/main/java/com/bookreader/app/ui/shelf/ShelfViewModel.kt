@@ -29,8 +29,35 @@ import java.io.IOException
 /** Shelf item: book + cover path + total seconds spent reading it */
 data class ShelfItem(val book: Book, val coverPath: String?, val readSeconds: Long = 0)
 
+/** One shelf cell: a single book, or a group the user created by dragging */
+sealed interface ShelfEntry {
+    val key: String
+
+    data class Single(val item: ShelfItem) : ShelfEntry {
+        override val key get() = item.book.id
+    }
+
+    /** Group members keep the shelf order; the cover collage uses the first 4 */
+    data class Group(val name: String, val items: List<ShelfItem>) : ShelfEntry {
+        override val key get() = "group:$name"
+    }
+}
+
+/** Sorted books → shelf items: a group takes the position of its first book */
+internal fun shelfEntries(sorted: List<ShelfItem>): List<ShelfEntry> {
+    val groups = sorted.filter { it.book.group != null }.groupBy { it.book.group!! }
+    val placed = HashSet<String>()
+    return sorted.mapNotNull { item ->
+        val name = item.book.group ?: return@mapNotNull ShelfEntry.Single(item)
+        if (placed.add(name)) ShelfEntry.Group(name, groups.getValue(name)) else null
+    }
+}
+
 data class ShelfUiState(
-    val items: List<ShelfItem> = emptyList(),
+    /** No grouping while searching: matching books are listed directly, including books inside groups */
+    val entries: List<ShelfEntry> = emptyList(),
+    /** Number of books listed (groups count their books) */
+    val count: Int = 0,
     /** Continue reading: the most recently read book */
     val current: ShelfItem? = null,
     val total: Int = 0,
@@ -58,10 +85,12 @@ class ShelfViewModel(
 
     val state = combine(items, query, busy, message) { items, query, busy, message ->
         val sorted = items.sortedByDescending { maxOf(it.book.lastReadAt, it.book.addedAt) }
+        val matched = if (query.isBlank()) sorted else sorted.filter {
+            it.book.title.contains(query, ignoreCase = true) || it.book.author.contains(query, ignoreCase = true)
+        }
         ShelfUiState(
-            items = if (query.isBlank()) sorted else sorted.filter {
-                it.book.title.contains(query, ignoreCase = true) || it.book.author.contains(query, ignoreCase = true)
-            },
+            entries = if (query.isBlank()) shelfEntries(sorted) else matched.map { ShelfEntry.Single(it) },
+            count = matched.size,
             current = items.filter { it.book.lastReadAt > 0 }.maxByOrNull { it.book.lastReadAt },
             total = items.size,
             query = query,
@@ -115,21 +144,42 @@ class ShelfViewModel(
 
     fun delete(book: Book) = launchBusy { books.remove(book) }
 
+    /** After dragging one book onto another and naming the group: put both into the new group */
+    fun createGroup(ids: List<String>, name: String) = launchCatching { books.setGroup(ids, name.trim()) }
+
+    /** Dropped onto an existing group */
+    fun addToGroup(book: Book, name: String) = launchCatching {
+        books.setGroup(listOf(book.id), name)
+        message.value = "已移入「$name」"
+    }
+
+    /** Removes books from their group; passing all of a group's books ungroups it */
+    fun ungroup(ids: List<String>) = launchCatching { books.setGroup(ids, null) }
+
+    fun renameGroup(from: String, to: String) = launchCatching { books.renameGroup(from, to.trim()) }
+
     fun clearMessage() {
         message.value = null
     }
 
-    private fun launchBusy(block: suspend () -> Unit) {
+    private fun launchBusy(block: suspend () -> Unit) = launchCatching {
+        busy.value = true
+        try {
+            block()
+        } finally {
+            busy.value = false
+        }
+    }
+
+    /** Shown in a snackbar on error */
+    private fun launchCatching(block: suspend () -> Unit) {
         viewModelScope.launch {
-            busy.value = true
             try {
                 block()
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
                 message.value = e.message ?: e.toString()
-            } finally {
-                busy.value = false
             }
         }
     }

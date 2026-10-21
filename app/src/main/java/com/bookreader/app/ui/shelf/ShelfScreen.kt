@@ -3,7 +3,6 @@ package com.bookreader.app.ui.shelf
 import androidx.compose.foundation.background
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -20,23 +19,20 @@ import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -45,8 +41,13 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.layout.boundsInRoot
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -79,11 +80,25 @@ fun ShelfScreen(
     val grid by viewModel.grid.collectAsStateWithLifecycle()
     var searching by rememberSaveable { mutableStateOf(false) }
     var pendingDelete by remember { mutableStateOf<Book?>(null) }
+    val drag = remember { ShelfDragState() }
+    /** Two books dragged together, waiting for a group name */
+    var pendingGroup by remember { mutableStateOf<List<String>?>(null) }
+    var openGroup by rememberSaveable { mutableStateOf<String?>(null) }
+    val listCoverWidth = with(LocalDensity.current) { 64.dp.toPx() }
     val closeSearch = {
         searching = false
         viewModel.setQuery("")
     }
     BackHandler(enabled = searching, onBack = closeSearch)
+
+    /** Release: dropped on a book → name a new group; dropped on a group → join it directly */
+    fun drop(book: Book, targetKey: String) {
+        when (val target = state.entries.firstOrNull { it.key == targetKey }) {
+            is ShelfEntry.Single -> pendingGroup = listOf(target.item.book.id, book.id)
+            is ShelfEntry.Group -> viewModel.addToGroup(book, target.name)
+            null -> Unit
+        }
+    }
 
     LaunchedEffect(Unit) {
         viewModel.openReader.collect { context.startActivity(ReaderActivity.intent(context, it)) }
@@ -95,7 +110,7 @@ fun ShelfScreen(
         }
     }
 
-    Box(Modifier.fillMaxSize()) {
+    Box(Modifier.fillMaxSize().onGloballyPositioned { drag.origin = it.positionInRoot() }) {
         LazyVerticalGrid(
             // Adaptive column count: 3 columns on a phone in portrait, more in landscape/on tablets
             columns = GridCells.Adaptive(if (grid) 92.dp else 340.dp),
@@ -133,18 +148,79 @@ fun ShelfScreen(
                 fullLine { EmptyShelf(onOpenDiscover = onOpenDiscover, onImport = onImportEpub) }
             } else {
                 fullLine {
-                    AllBooksHeader(state.items.size, grid, viewModel::setGrid)
+                    AllBooksHeader(state.count, grid, viewModel::setGrid)
                 }
-                items(state.items, key = { it.book.id }) { item ->
-                    val modifier = Modifier.combinedClickable(
-                        onClick = { viewModel.open(item.book) },
-                        onLongClick = { pendingDelete = item.book },
-                    )
-                    if (grid) GridBook(item, modifier) else ListBook(item, modifier) { pendingDelete = item.book }
+                items(state.entries, key = { it.key }) { entry ->
+                    val key = entry.key
+                    val highlighted = drag.target == key
+                    // Report bounds for drop detection; items scrolled off screen drop out
+                    val placed = Modifier.onGloballyPositioned { drag.place(key, it.boundsInRoot()) }
+                    DisposableEffect(key) { onDispose { drag.forget(key) } }
+                    when (entry) {
+                        is ShelfEntry.Single -> {
+                            val item = entry.item
+                            val modifier = placed
+                                .alpha(if (drag.dragging?.book?.id == key) 0.3f else 1f)
+                                .shelfGestures(
+                                    onTap = { viewModel.open(item.book) },
+                                    onLongPress = { pendingDelete = item.book },
+                                    onDragStart = { drag.start(item, it, if (grid) null else listCoverWidth) },
+                                    onDrag = drag::move,
+                                    onDragEnd = { drag.drop()?.let { (dropped, target) -> drop(dropped.book, target) } },
+                                    onDragCancel = drag::cancel,
+                                )
+                            if (grid) {
+                                GridBook(item, highlighted, modifier)
+                            } else {
+                                ListBook(item, highlighted, modifier) { pendingDelete = item.book }
+                            }
+                        }
+                        is ShelfEntry.Group -> {
+                            val modifier = placed.clickable { openGroup = entry.name }
+                            if (grid) GridGroup(entry, highlighted, modifier) else ListGroup(entry, highlighted, modifier)
+                        }
+                    }
                 }
             }
         }
+        DragPreview(drag)
         SnackbarHost(snackbar, Modifier.align(Alignment.BottomCenter))
+    }
+
+    // Dialogs stack in the order they appear: the group dialog below, the delete confirmation it opens on top
+    val group = state.entries.firstOrNull { it is ShelfEntry.Group && it.name == openGroup } as ShelfEntry.Group?
+    if (group != null) {
+        GroupDialog(
+            group,
+            onOpen = viewModel::open,
+            onRemove = { book ->
+                // Removing the last book makes the group disappear
+                if (group.items.size == 1) openGroup = null
+                viewModel.ungroup(listOf(book.id))
+            },
+            onDelete = { book -> pendingDelete = book },
+            onRename = { name ->
+                viewModel.renameGroup(group.name, name)
+                openGroup = name
+            },
+            onUngroup = {
+                openGroup = null
+                viewModel.ungroup(group.items.map { it.book.id })
+            },
+            onDismiss = { openGroup = null },
+        )
+    }
+
+    pendingGroup?.let { ids ->
+        GroupNameDialog(
+            title = "新建分组",
+            initial = "",
+            onConfirm = { name ->
+                viewModel.createGroup(ids, name)
+                pendingGroup = null
+            },
+            onDismiss = { pendingGroup = null },
+        )
     }
 
     pendingDelete?.let { book ->
@@ -154,6 +230,8 @@ fun ShelfScreen(
             text = { Text("会同时删除本地文件和阅读进度") },
             confirmButton = {
                 TextButton(onClick = {
+                    // Deleting the last book in a group removes the group, so the dialog closes too
+                    if (group?.items?.singleOrNull()?.book?.id == book.id) openGroup = null
                     viewModel.delete(book)
                     pendingDelete = null
                 }) { Text("删除") }
@@ -222,10 +300,13 @@ private fun ModeIcon(icon: androidx.compose.ui.graphics.vector.ImageVector, labe
 }
 
 @Composable
-private fun GridBook(item: ShelfItem, modifier: Modifier) {
+private fun GridBook(item: ShelfItem, highlighted: Boolean, modifier: Modifier) {
     val book = item.book
     Column(Modifier.padding(bottom = Space.XL).then(modifier)) {
-        BookCover(book.title, book.author, item.coverPath, Modifier.fillMaxWidth().aspectRatio(COVER_RATIO))
+        BookCover(
+            book.title, book.author, item.coverPath,
+            Modifier.dropHighlight(highlighted).fillMaxWidth().aspectRatio(COVER_RATIO),
+        )
         Gap(Space.M)
         Text(book.title, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
         Text(
@@ -241,12 +322,15 @@ private fun GridBook(item: ShelfItem, modifier: Modifier) {
 
 /** List row: cover + title (two lines) + author + progress bar + reading time/speed + date range + overflow menu */
 @Composable
-private fun ListBook(item: ShelfItem, modifier: Modifier, onDelete: () -> Unit) {
+private fun ListBook(item: ShelfItem, highlighted: Boolean, modifier: Modifier, onDelete: () -> Unit) {
     val book = item.book
     val secondary = MaterialTheme.colorScheme.onSurfaceVariant
     var menu by remember { mutableStateOf(false) }
     Row(modifier.fillMaxWidth().padding(vertical = Space.M)) {
-        BookCover(book.title, book.author, item.coverPath, Modifier.width(64.dp).aspectRatio(COVER_RATIO))
+        BookCover(
+            book.title, book.author, item.coverPath,
+            Modifier.dropHighlight(highlighted).width(64.dp).aspectRatio(COVER_RATIO),
+        )
         Column(Modifier.weight(1f).padding(start = Space.L)) {
             Row {
                 Text(
@@ -281,7 +365,7 @@ private fun ListBook(item: ShelfItem, modifier: Modifier, onDelete: () -> Unit) 
     }
 }
 
-private fun readLabel(book: Book) = if (book.lastReadAt == 0L) "未读" else "已读 ${percent(book.progress)}"
+internal fun readLabel(book: Book) = if (book.lastReadAt == 0L) "未读" else "已读 ${percent(book.progress)}"
 
 @Composable
 private fun EmptyShelf(onOpenDiscover: () -> Unit, onImport: () -> Unit) {
