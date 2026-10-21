@@ -1,6 +1,8 @@
 package com.bookreader.app.ui.shelf
 
 import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.compose.foundation.background
+import androidx.activity.compose.BackHandler
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
@@ -64,8 +66,8 @@ import com.bookreader.app.ui.components.PageHeader
 import com.bookreader.app.ui.components.PagePadding
 import com.bookreader.app.ui.components.ProgressLine
 import com.bookreader.app.ui.components.SurfaceCard
+import com.bookreader.app.ui.components.SearchHeader
 import com.bookreader.app.ui.theme.AppIcons
-import kotlin.math.roundToInt
 
 @Composable
 fun ShelfScreen(
@@ -83,6 +85,11 @@ fun ShelfScreen(
         uri?.let(viewModel::importEpub)
     }
     val importEpub = { picker.launch(arrayOf(OpdsParser.EPUB_TYPE)) }
+    val closeSearch = {
+        searching = false
+        viewModel.setQuery("")
+    }
+    BackHandler(enabled = searching, onBack = closeSearch)
 
     LaunchedEffect(Unit) {
         viewModel.openReader.collect { context.startActivity(ReaderActivity.intent(context, it)) }
@@ -96,17 +103,23 @@ fun ShelfScreen(
 
     Box(Modifier.fillMaxSize()) {
         LazyVerticalGrid(
-            columns = GridCells.Fixed(if (grid) 3 else 1),
+            // Adaptive column count: 3 columns on a phone in portrait, more in landscape/on tablets
+            columns = GridCells.Adaptive(if (grid) 92.dp else 340.dp),
             contentPadding = PaddingValues(start = PagePadding, end = PagePadding, bottom = 24.dp),
             horizontalArrangement = Arrangement.spacedBy(16.dp),
             verticalArrangement = Arrangement.spacedBy(if (grid) 28.dp else 0.dp),
         ) {
             fullLine {
-                PageHeader("书架", "阅读，让时间有了形状", horizontalPadding = 0.dp) {
-                    CircleIconButton(AppIcons.Search, "搜索") {
-                        searching = !searching
-                        if (!searching) viewModel.setQuery("")
-                    }
+                if (searching) {
+                    SearchHeader(
+                        query = state.query,
+                        onQueryChange = viewModel::setQuery,
+                        placeholder = "搜索书名或作者",
+                        onClose = closeSearch,
+                        horizontalPadding = 0.dp,
+                    )
+                } else PageHeader("书架", "阅读，让时间有了形状", horizontalPadding = 0.dp) {
+                    CircleIconButton(AppIcons.Search, "搜索") { searching = true }
                     Box {
                         CircleIconButton(AppIcons.More, "更多") { menu = true }
                         DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
@@ -124,26 +137,14 @@ fun ShelfScreen(
                     }
                 }
             }
-            if (searching) {
-                fullLine {
-                    OutlinedTextField(
-                        value = state.query,
-                        onValueChange = viewModel::setQuery,
-                        placeholder = { Text("搜索书名或作者") },
-                        singleLine = true,
-                        shape = RoundedCornerShape(16.dp),
-                        modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
-                    )
-                }
-            }
             if (state.busy) fullLine { LinearProgressIndicator(Modifier.fillMaxWidth().padding(top = 8.dp)) }
 
             val current = state.current
-            if (current != null && state.query.isBlank()) {
+            if (current != null && !searching) {
                 fullLine {
-                    Column(Modifier.padding(top = 24.dp)) {
-                        Text("继续阅读", fontSize = 17.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        Gap(14)
+                    Column(Modifier.padding(top = 4.dp)) {
+                        Text("继续阅读", fontSize = 15.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Gap(10)
                         ContinueCard(current) { viewModel.open(current.book) }
                     }
                 }
@@ -160,7 +161,7 @@ fun ShelfScreen(
                         onClick = { viewModel.open(item.book) },
                         onLongClick = { pendingDelete = item.book },
                     )
-                    if (grid) GridBook(item, modifier) else ListBook(item, modifier)
+                    if (grid) GridBook(item, modifier) else ListBook(item, modifier) { pendingDelete = item.book }
                 }
             }
         }
@@ -187,57 +188,42 @@ private fun androidx.compose.foundation.lazy.grid.LazyGridScope.fullLine(content
     item(span = { GridItemSpan(maxLineSpan) }) { content() }
 }
 
-private fun percent(progress: Double) = "${(progress * 100).roundToInt()}%"
+private fun percent(progress: Double) = ShelfFormat.percent(progress)
 
+/** Continue reading: a compact one-row card, clickable as a whole */
 @Composable
 private fun ContinueCard(item: ShelfItem, onContinue: () -> Unit) {
     val book = item.book
-    SurfaceCard {
-        Row(Modifier.padding(24.dp), verticalAlignment = Alignment.CenterVertically) {
-            Column(Modifier.weight(1f)) {
-                Text(book.title, fontSize = 24.sp, fontWeight = FontWeight.Bold, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                Gap(4)
-                Text(book.author, fontSize = 16.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
-                Gap(18)
+    val secondary = MaterialTheme.colorScheme.onSurfaceVariant
+    SurfaceCard(onClick = onContinue) {
+        Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+            BookCover(book.title, book.author, item.coverPath, Modifier.width(52.dp).aspectRatio(COVER_RATIO))
+            Column(Modifier.weight(1f).padding(horizontal = 14.dp)) {
+                Text(book.title, fontSize = 16.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Gap(2)
                 Text(
-                    book.chapter ?: "已读 ${percent(book.progress)}",
-                    fontSize = 14.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
+                    listOfNotNull(book.author.ifBlank { null }, book.chapter).joinToString(" · "),
+                    fontSize = 13.sp, color = secondary, maxLines = 1, overflow = TextOverflow.Ellipsis,
                 )
                 Gap(10)
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     ProgressLine(book.progress.toFloat(), Modifier.weight(1f))
-                    Text(
-                        percent(book.progress),
-                        fontSize = 14.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(start = 12.dp),
-                    )
-                }
-                Gap(20)
-                Button(
-                    onClick = onContinue,
-                    shape = CircleShape,
-                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
-                    contentPadding = PaddingValues(horizontal = 24.dp, vertical = 12.dp),
-                ) {
-                    Text("继续阅读", fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
-                    Icon(AppIcons.ArrowForward, null, Modifier.padding(start = 10.dp).size(18.dp))
+                    Text(percent(book.progress), fontSize = 12.sp, color = secondary, modifier = Modifier.padding(start = 10.dp))
                 }
             }
-            BookCover(
-                book.title, book.author, item.coverPath,
-                Modifier.padding(start = 20.dp).width(104.dp).aspectRatio(COVER_RATIO),
-            )
+            Box(
+                Modifier.size(44.dp).clip(CircleShape).background(MaterialTheme.colorScheme.primary),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(AppIcons.ArrowForward, "继续阅读", Modifier.size(20.dp), tint = MaterialTheme.colorScheme.onPrimary)
+            }
         }
     }
 }
 
 @Composable
 private fun AllBooksHeader(count: Int, grid: Boolean, onGridChange: (Boolean) -> Unit) {
-    Row(Modifier.padding(top = 32.dp, bottom = 16.dp), verticalAlignment = Alignment.CenterVertically) {
+    Row(Modifier.padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
         Column(Modifier.weight(1f)) {
             Text("全部书籍", fontSize = 24.sp, fontWeight = FontWeight.Bold)
             Text("${count}本", fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -274,29 +260,45 @@ private fun GridBook(item: ShelfItem, modifier: Modifier) {
     }
 }
 
+/** List row: cover + title (two lines) + author + progress bar + reading time/speed + date range + overflow menu */
 @Composable
-private fun ListBook(item: ShelfItem, modifier: Modifier) {
+private fun ListBook(item: ShelfItem, modifier: Modifier, onDelete: () -> Unit) {
     val book = item.book
-    Column(modifier) {
-        Row(Modifier.padding(vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-            BookCover(book.title, book.author, item.coverPath, Modifier.width(56.dp).aspectRatio(COVER_RATIO))
-            Column(Modifier.weight(1f).padding(start = 16.dp)) {
-                Text(book.title, fontSize = 16.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+    val secondary = MaterialTheme.colorScheme.onSurfaceVariant
+    var menu by remember { mutableStateOf(false) }
+    Row(modifier.fillMaxWidth().padding(vertical = 12.dp)) {
+        BookCover(book.title, book.author, item.coverPath, Modifier.width(64.dp).aspectRatio(COVER_RATIO))
+        Column(Modifier.weight(1f).padding(start = 16.dp)) {
+            Row {
                 Text(
-                    book.author, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    book.title, fontSize = 16.sp, lineHeight = 22.sp, maxLines = 2, overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f),
                 )
-                Gap(10)
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    ProgressLine(book.progress.toFloat(), Modifier.weight(1f))
-                    Text(
-                        readLabel(book), fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(start = 12.dp),
+                Box {
+                    Icon(
+                        AppIcons.MoreVert, "更多", tint = secondary,
+                        modifier = Modifier.size(32.dp).clip(CircleShape).clickable { menu = true }.padding(4.dp),
                     )
+                    DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
+                        DropdownMenuItem(text = { Text("删除") }, onClick = { menu = false; onDelete() })
+                    }
                 }
             }
+            Text(book.author, fontSize = 13.sp, color = secondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Gap(10)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                ProgressLine(book.progress.toFloat(), Modifier.weight(1f))
+                Text(
+                    ShelfFormat.percent(book.progress), fontSize = 13.sp, color = secondary,
+                    modifier = Modifier.padding(start = 12.dp),
+                )
+            }
+            Gap(6)
+            Text(ShelfFormat.readingLine(item.readSeconds, book.progress, book.totalChars), fontSize = 12.sp, color = secondary)
+            ShelfFormat.dateRange(book.firstReadAt, book.lastReadAt)?.let {
+                Text(it, fontSize = 12.sp, color = secondary)
+            }
         }
-        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
     }
 }
 

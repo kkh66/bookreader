@@ -131,7 +131,7 @@ private fun WeekChart(days: List<DayStat>, today: LocalDate) {
     Row(Modifier.fillMaxWidth().height(170.dp), verticalAlignment = Alignment.Bottom) {
         days.forEach { day ->
             val isToday = day.date == today
-            val minutes = day.seconds / 60
+            val minutes = displayMinutes(day.seconds)
             Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
                 Text(
                     if (minutes > 0) "${minutes}分" else "0",
@@ -168,11 +168,14 @@ private fun weekday(date: LocalDate) = "周" + "一二三四五六日"[date.dayO
 
 /** Today's big number: under an hour it shows "21分钟" (21 minutes) */
 private fun todayText(seconds: Long): String {
-    val minutes = seconds / 60
+    val minutes = displayMinutes(seconds)
     return if (minutes < 60) "${minutes}分钟" else "${minutes / 60}时${minutes % 60}分"
 }
 
 private fun duration(seconds: Long): String {
-    val minutes = seconds / 60
+    val minutes = displayMinutes(seconds)
     return if (minutes < 60) "${minutes}分" else "${minutes / 60}时${minutes % 60}分"
 }
+
+/** Show at least 1 minute even when under a minute, so the UI never says "0分钟" (0 minutes) next to "已记录" (recorded) */
+private fun displayMinutes(seconds: Long) = if (seconds in 1..59) 1L else seconds / 60

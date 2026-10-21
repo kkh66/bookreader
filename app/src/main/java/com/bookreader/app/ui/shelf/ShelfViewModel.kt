@@ -10,6 +10,7 @@ import androidx.lifecycle.viewmodel.viewModelFactory
 import com.bookreader.app.container
 import com.bookreader.app.data.Book
 import com.bookreader.app.data.BookRepository
+import com.bookreader.app.data.StatsRepository
 import com.bookreader.app.reader.ReaderRepository
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -18,13 +19,13 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flowOn
-import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import java.io.IOException
 
-data class ShelfItem(val book: Book, val coverPath: String?)
+/** Shelf item: book + cover path + total seconds spent reading it */
+data class ShelfItem(val book: Book, val coverPath: String?, val readSeconds: Long = 0)
 
 data class ShelfUiState(
     val items: List<ShelfItem> = emptyList(),
@@ -38,6 +39,7 @@ data class ShelfUiState(
 
 class ShelfViewModel(
     private val books: BookRepository,
+    stats: StatsRepository,
     private val reader: ReaderRepository,
     private val resolver: ContentResolver,
 ) : ViewModel() {
@@ -46,8 +48,9 @@ class ShelfViewModel(
     private val busy = MutableStateFlow(false)
     private val message = MutableStateFlow<String?>(null)
 
-    private val items = books.books
-        .map { list -> list.map { ShelfItem(it, books.cover(it)?.path) } }
+    private val items = combine(books.books, stats.stats) { list, stats ->
+        list.map { ShelfItem(it, books.cover(it)?.path, stats.books[it.id] ?: 0L) }
+    }
         .flowOn(Dispatchers.IO)
 
     val state = combine(items, query, busy, message) { items, query, busy, message ->
@@ -69,8 +72,8 @@ class ShelfViewModel(
     val openReader = _openReader.receiveAsFlow()
 
     init {
-        // Extract covers for books imported earlier
-        viewModelScope.launch { runCatching { books.ensureCovers() } }
+        // Extract covers and character counts for books imported earlier
+        viewModelScope.launch { runCatching { books.ensureMetadata() } }
     }
 
     fun setQuery(value: String) {
@@ -113,7 +116,7 @@ class ShelfViewModel(
         val Factory = viewModelFactory {
             initializer {
                 val app = this[APPLICATION_KEY]!!
-                ShelfViewModel(app.container.books, app.container.reader, app.contentResolver)
+                ShelfViewModel(app.container.books, app.container.stats, app.container.reader, app.contentResolver)
             }
         }
     }

@@ -1,5 +1,6 @@
 package com.bookreader.app.ui.discover
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -39,6 +40,7 @@ import com.bookreader.app.ui.components.Gap
 import com.bookreader.app.ui.components.IconTileRow
 import com.bookreader.app.ui.components.PageHeader
 import com.bookreader.app.ui.components.PagePadding
+import com.bookreader.app.ui.components.SearchHeader
 import com.bookreader.app.ui.components.SectionTitle
 import com.bookreader.app.ui.components.SurfaceCard
 import com.bookreader.app.ui.theme.AppIcons
@@ -56,26 +58,26 @@ fun DiscoverScreen(
         viewModel.searchUrl(query)?.takeIf { query.isNotBlank() }?.let { onBrowse(it, "搜索：${query.trim()}") }
     }
 
+    val closeSearch = {
+        searching = false
+        query = ""
+    }
+    BackHandler(enabled = searching, onBack = closeSearch)
+
     LaunchedEffect(Unit) { viewModel.start() }
 
     LazyColumn(Modifier.fillMaxSize()) {
         item {
-            PageHeader("发现", "下一本好书，在这里遇见") {
-                if (state.searchTemplate != null) CircleIconButton(AppIcons.Search, "搜索") { searching = !searching }
-            }
-        }
-        if (searching) {
-            item {
-                OutlinedTextField(
-                    value = query,
-                    onValueChange = { query = it },
-                    placeholder = { Text("在 Calibre 书库中搜索书名、作者") },
-                    singleLine = true,
-                    shape = RoundedCornerShape(16.dp),
-                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-                    keyboardActions = KeyboardActions(onSearch = { submit() }),
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = PagePadding, vertical = 8.dp),
+            if (searching) {
+                SearchHeader(
+                    query = query,
+                    onQueryChange = { query = it },
+                    placeholder = "搜索 Calibre 书名、作者",
+                    onClose = closeSearch,
+                    onSearch = { submit() },
                 )
+            } else PageHeader("发现", "下一本好书，在这里遇见") {
+                if (state.searchTemplate != null) CircleIconButton(AppIcons.Search, "搜索") { searching = true }
             }
         }
         item {
@@ -132,9 +134,9 @@ private fun CardRow(
     onClick: () -> Unit,
 ) {
     SurfaceCard(modifier, onClick = onClick) {
-        Row(Modifier.padding(horizontal = 24.dp, vertical = 26.dp), verticalAlignment = Alignment.CenterVertically) {
-            Icon(icon, null, Modifier.size(30.dp))
-            Column(Modifier.weight(1f).padding(horizontal = 20.dp)) {
+        Row(Modifier.padding(horizontal = 20.dp, vertical = 22.dp), verticalAlignment = Alignment.CenterVertically) {
+            Icon(icon, null, Modifier.size(26.dp))
+            Column(Modifier.weight(1f).padding(horizontal = 16.dp)) {
                 Text(title, fontSize = 18.sp, fontWeight = FontWeight.Bold)
                 Gap(4)
                 Text(subtitle, fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)

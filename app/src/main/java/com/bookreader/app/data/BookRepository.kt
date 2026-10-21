@@ -14,6 +14,8 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import org.readium.r2.shared.publication.Publication
 import org.readium.r2.shared.publication.services.coverFitting
+import org.readium.r2.shared.util.getOrElse
+import org.jsoup.Jsoup
 import java.io.File
 import java.io.InputStream
 import java.util.UUID
@@ -37,6 +39,10 @@ data class Book(
     val lastReadAt: Long = 0,
     /** Whether cover extraction was attempted (books without a cover are not retried) */
     val coverChecked: Boolean = false,
+    /** First time the book was read, 0 if never */
+    val firstReadAt: Long = 0,
+    /** Character count of the whole book (excluding whitespace), null if not counted yet */
+    val totalChars: Long? = null,
 )
 
 /**
@@ -87,6 +93,7 @@ class BookRepository(private val dir: File, private val readium: Readium) {
                 addedAt = System.currentTimeMillis(),
                 source = source,
                 coverChecked = true,
+                totalChars = countChars(publication),
             )
         } finally {
             publication.close()
@@ -95,18 +102,21 @@ class BookRepository(private val dir: File, private val readium: Readium) {
         return book
     }
 
-    /** Adds covers to books imported earlier that never had one extracted */
-    suspend fun ensureCovers() {
-        for (book in _books.value.filterNot { it.coverChecked }) {
-            runCatching {
+    /** Adds covers and character counts to books imported earlier */
+    suspend fun ensureMetadata() {
+        for (book in _books.value.filter { !it.coverChecked || it.totalChars == null }) {
+            val chars = runCatching {
                 val publication = readium.open(file(book))
                 try {
-                    saveCover(book.id, publication)
+                    if (!book.coverChecked) saveCover(book.id, publication)
+                    book.totalChars ?: countChars(publication)
                 } finally {
                     publication.close()
                 }
+            }.getOrDefault(0L)
+            update { list ->
+                list.map { if (it.id == book.id) it.copy(coverChecked = true, totalChars = chars) else it }
             }
-            update { list -> list.map { if (it.id == book.id) it.copy(coverChecked = true) else it } }
         }
     }
 
@@ -122,8 +132,30 @@ class BookRepository(private val dir: File, private val readium: Readium) {
         val now = System.currentTimeMillis()
         update { list ->
             list.map {
-                if (it.id == id) it.copy(locator = locator, progress = progress, chapter = chapter, lastReadAt = now)
-                else it
+                if (it.id == id) {
+                    it.copy(
+                        locator = locator,
+                        progress = progress,
+                        chapter = chapter,
+                        lastReadAt = now,
+                        firstReadAt = it.firstReadAt.takeIf { first -> first > 0 } ?: now,
+                    )
+                } else {
+                    it
+                }
+            }
+        }
+    }
+
+    /** Counts the characters of the text (tags and whitespace removed), used to compute reading speed */
+    private suspend fun countChars(publication: Publication): Long = withContext(Dispatchers.IO) {
+        publication.readingOrder.sumOf { link ->
+            val resource = publication.get(link) ?: return@sumOf 0L
+            try {
+                val bytes = resource.read().getOrElse { return@sumOf 0L }
+                Jsoup.parse(String(bytes, Charsets.UTF_8)).text().count { !it.isWhitespace() }.toLong()
+            } finally {
+                resource.close()
             }
         }
     }

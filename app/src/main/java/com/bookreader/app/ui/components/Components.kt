@@ -21,6 +21,16 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.remember
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -216,3 +226,48 @@ fun Gap(height: Int) = Spacer(Modifier.height(height.dp))
 
 @Composable
 fun HGap(width: Int) = Spacer(Modifier.width(width.dp))
+
+/** Row that replaces the header while searching: rounded text field + close button, focused when opened */
+@Composable
+fun SearchHeader(
+    query: String,
+    onQueryChange: (String) -> Unit,
+    placeholder: String,
+    onClose: () -> Unit,
+    horizontalPadding: Dp = PagePadding,
+    onSearch: () -> Unit = {},
+) {
+    val focus = remember { FocusRequester() }
+    val secondary = MaterialTheme.colorScheme.onSurfaceVariant
+    LaunchedEffect(Unit) { focus.requestFocus() }
+    Row(
+        Modifier.fillMaxWidth().padding(start = horizontalPadding, end = horizontalPadding, top = 20.dp, bottom = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Row(
+            Modifier.weight(1f).height(48.dp).clip(CircleShape)
+                .background(MaterialTheme.colorScheme.surfaceVariant).padding(horizontal = 16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(AppIcons.Search, null, Modifier.size(20.dp), tint = secondary)
+            BasicTextField(
+                value = query,
+                onValueChange = onQueryChange,
+                singleLine = true,
+                textStyle = TextStyle(fontSize = 16.sp, color = MaterialTheme.colorScheme.onSurface),
+                cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                keyboardActions = KeyboardActions(onSearch = { onSearch() }),
+                modifier = Modifier.weight(1f).padding(start = 10.dp).focusRequester(focus),
+                decorationBox = { inner ->
+                    Box(contentAlignment = Alignment.CenterStart) {
+                        if (query.isEmpty()) Text(placeholder, fontSize = 16.sp, color = secondary, maxLines = 1)
+                        inner()
+                    }
+                },
+            )
+        }
+        Spacer(Modifier.width(12.dp))
+        CircleIconButton(AppIcons.Close, "关闭搜索", onClose)
+    }
+}
