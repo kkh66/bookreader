@@ -44,6 +44,7 @@ import com.bookreader.app.ui.theme.AppIcons
 
 @Composable
 fun OpdsScreen(
+    libraryId: String,
     startUrl: String,
     startTitle: String,
     onExit: () -> Unit,
@@ -53,7 +54,7 @@ fun OpdsScreen(
     val snackbar = remember { SnackbarHostState() }
     val goBack = { if (!viewModel.back()) onExit() }
 
-    LaunchedEffect(startUrl) { viewModel.start(startUrl, startTitle) }
+    LaunchedEffect(libraryId, startUrl) { viewModel.start(libraryId, startUrl, startTitle) }
     LaunchedEffect(state.message) {
         state.message?.let {
             snackbar.showSnackbar(it)

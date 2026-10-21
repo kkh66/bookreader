@@ -7,6 +7,8 @@ import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.bookreader.app.container
 import com.bookreader.app.data.BookRepository
+import com.bookreader.app.data.LibraryRepository
+import com.bookreader.app.data.OpdsLibrary
 import com.bookreader.app.data.opds.OpdsEntry
 import com.bookreader.app.data.opds.OpdsRepository
 import kotlinx.coroutines.CancellationException
@@ -34,6 +36,7 @@ data class OpdsUiState(
  * Calibre library browser: keeps a stack of visited folders and downloads epubs to the shelf
  */
 class OpdsViewModel(
+    private val libraries: LibraryRepository,
     private val opds: OpdsRepository,
     private val books: BookRepository,
 ) : ViewModel() {
@@ -49,9 +52,13 @@ class OpdsViewModel(
         state.copy(downloaded = list.mapNotNullTo(HashSet()) { it.source })
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), OpdsUiState())
 
-    /** Called when the screen opens: restart from the entry URL when it changed */
-    fun start(url: String, title: String) {
-        if (stack.firstOrNull()?.url == url) return
+    /** Library being browsed; its credentials are used for requests */
+    private var library: OpdsLibrary? = null
+
+    /** Called when the screen opens: restart from the entry URL when the library or the entry URL changed */
+    fun start(libraryId: String, url: String, title: String) {
+        if (library?.id == libraryId && stack.firstOrNull()?.url == url) return
+        library = libraries.find(libraryId)
         stack.clear()
         _state.update { OpdsUiState() }
         open(url, title)
@@ -77,11 +84,12 @@ class OpdsViewModel(
 
     fun download(epub: OpdsEntry.Epub) {
         val url = epub.downloadUrl
+        val library = library ?: return
         if (books.hasSource(url) || url in _state.value.downloading) return
         _state.update { it.copy(downloading = it.downloading + url) }
         viewModelScope.launch {
             try {
-                val book = opds.download(url) { books.import(it, epub.title, source = url) }
+                val book = opds.download(library, url) { books.import(it, epub.title, source = url) }
                 _state.update { it.copy(message = "已加入书架：${book.title}") }
             } catch (e: CancellationException) {
                 throw e
@@ -97,11 +105,15 @@ class OpdsViewModel(
 
     private fun load() {
         val level = stack.lastOrNull() ?: return
+        val library = library ?: run {
+            _state.update { it.copy(error = "书库不存在") }
+            return
+        }
         loadJob?.cancel()
         _state.update { it.copy(title = level.title, loading = true, error = null) }
         loadJob = viewModelScope.launch {
             try {
-                val page = opds.load(level.url)
+                val page = opds.load(library, level.url)
                 _state.update {
                     it.copy(
                         title = level.title.ifBlank { page.title },
@@ -124,7 +136,7 @@ class OpdsViewModel(
         val Factory = viewModelFactory {
             initializer {
                 val container = this[APPLICATION_KEY]!!.container
-                OpdsViewModel(container.opds, container.books)
+                OpdsViewModel(container.libraries, container.opds, container.books)
             }
         }
     }

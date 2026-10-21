@@ -77,7 +77,7 @@ fun ShelfScreen(
     val state by viewModel.state.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val snackbar = remember { SnackbarHostState() }
-    var grid by rememberSaveable { mutableStateOf(true) }
+    val grid by viewModel.grid.collectAsStateWithLifecycle()
     var searching by rememberSaveable { mutableStateOf(false) }
     var menu by remember { mutableStateOf(false) }
     var pendingDelete by remember { mutableStateOf<Book?>(null) }
@@ -118,7 +118,7 @@ fun ShelfScreen(
                         onClose = closeSearch,
                         horizontalPadding = 0.dp,
                     )
-                } else PageHeader("书架", "阅读，让时间有了形状", horizontalPadding = 0.dp) {
+                } else PageHeader("书架", horizontalPadding = 0.dp) {
                     CircleIconButton(AppIcons.Search, "搜索") { searching = true }
                     Box {
                         CircleIconButton(AppIcons.More, "更多") { menu = true }
@@ -143,8 +143,8 @@ fun ShelfScreen(
             if (current != null && !searching) {
                 fullLine {
                     Column(Modifier.padding(top = 4.dp)) {
-                        Text("继续阅读", fontSize = 15.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        Gap(10)
+                        Text("继续阅读", fontSize = 24.sp, fontWeight = FontWeight.Bold)
+                        Gap(12)
                         ContinueCard(current) { viewModel.open(current.book) }
                     }
                 }
@@ -154,7 +154,7 @@ fun ShelfScreen(
                 fullLine { EmptyShelf(onOpenDiscover = onOpenDiscover, onImport = importEpub) }
             } else {
                 fullLine {
-                    AllBooksHeader(state.items.size, grid) { grid = it }
+                    AllBooksHeader(state.items.size, grid, viewModel::setGrid)
                 }
                 items(state.items, key = { it.book.id }) { item ->
                     val modifier = Modifier.combinedClickable(

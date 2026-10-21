@@ -1,6 +1,7 @@
 package com.bookreader.app.data
 
 import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.util.Size
 import com.bookreader.app.reader.Readium
 import kotlinx.coroutines.Dispatchers
@@ -14,6 +15,7 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import org.readium.r2.shared.publication.Publication
 import org.readium.r2.shared.publication.services.coverFitting
+import org.readium.r2.shared.util.Url
 import org.readium.r2.shared.util.getOrElse
 import org.jsoup.Jsoup
 import java.io.File
@@ -37,8 +39,8 @@ data class Book(
     val chapter: String? = null,
     /** Last time the book was read, 0 if never */
     val lastReadAt: Long = 0,
-    /** Whether cover extraction was attempted (books without a cover are not retried) */
-    val coverChecked: Boolean = false,
+    /** Version of the cover extraction rules last applied; books without a cover are retried when the rules are upgraded */
+    val coverVersion: Int = 0,
     /** First time the book was read, 0 if never */
     val firstReadAt: Long = 0,
     /** Character count of the whole book (excluding whitespace), null if not counted yet */
@@ -92,7 +94,7 @@ class BookRepository(private val dir: File, private val readium: Readium) {
                 fileName = file.name,
                 addedAt = System.currentTimeMillis(),
                 source = source,
-                coverChecked = true,
+                coverVersion = COVER_VERSION,
                 totalChars = countChars(publication),
             )
         } finally {
@@ -104,18 +106,21 @@ class BookRepository(private val dir: File, private val readium: Readium) {
 
     /** Adds covers and character counts to books imported earlier */
     suspend fun ensureMetadata() {
-        for (book in _books.value.filter { !it.coverChecked || it.totalChars == null }) {
+        val pending = _books.value.filter { book ->
+            book.totalChars == null || (book.coverVersion < COVER_VERSION && cover(book) == null)
+        }
+        for (book in pending) {
             val chars = runCatching {
                 val publication = readium.open(file(book))
                 try {
-                    if (!book.coverChecked) saveCover(book.id, publication)
+                    if (cover(book) == null) saveCover(book.id, publication)
                     book.totalChars ?: countChars(publication)
                 } finally {
                     publication.close()
                 }
-            }.getOrDefault(0L)
+            }.getOrDefault(book.totalChars ?: 0L)
             update { list ->
-                list.map { if (it.id == book.id) it.copy(coverChecked = true, totalChars = chars) else it }
+                list.map { if (it.id == book.id) it.copy(coverVersion = COVER_VERSION, totalChars = chars) else it }
             }
         }
     }
@@ -147,6 +152,50 @@ class BookRepository(private val dir: File, private val readium: Readium) {
         }
     }
 
+    /**
+     * For EPUBs whose metadata has no cover: first take the first image in the first chapter (usually the cover page),
+     * then try images with "cover" in the file name
+     */
+    private suspend fun fallbackCover(publication: Publication): Bitmap? {
+        val candidates = buildList {
+            publication.readingOrder.firstOrNull()?.let { first ->
+                readBytes(publication, first.url())?.let { html ->
+                    val page = Jsoup.parse(String(html, Charsets.UTF_8))
+                    val src = page.selectFirst("img[src]")?.attr("src")
+                        ?: page.selectFirst("image")?.let { it.attr("xlink:href").ifBlank { it.attr("href") } }
+                    src?.takeIf { it.isNotBlank() }?.let { Url(it) }?.let { add(first.url().resolve(it)) }
+                }
+            }
+            publication.resources
+                .filter { it.mediaType?.isBitmap == true && "cover" in it.url().toString().lowercase() }
+                .forEach { add(it.url()) }
+        }
+        for (url in candidates) {
+            val bytes = readBytes(publication, url) ?: continue
+            decodeScaled(bytes)?.let { return it }
+        }
+        return null
+    }
+
+    private suspend fun readBytes(publication: Publication, url: Url): ByteArray? {
+        val resource = publication.get(url) ?: return null
+        return try {
+            resource.read().getOrElse { null }
+        } finally {
+            resource.close()
+        }
+    }
+
+    /** Decodes downsampled to cover size so large images don't eat memory */
+    private fun decodeScaled(bytes: ByteArray): Bitmap? {
+        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
+        if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null
+        var sample = 1
+        while (bounds.outWidth / (sample * 2) >= COVER_WIDTH && bounds.outHeight / (sample * 2) >= COVER_HEIGHT) sample *= 2
+        return BitmapFactory.decodeByteArray(bytes, 0, bytes.size, BitmapFactory.Options().apply { inSampleSize = sample })
+    }
+
     /** Counts the characters of the text (tags and whitespace removed), used to compute reading speed */
     private suspend fun countChars(publication: Publication): Long = withContext(Dispatchers.IO) {
         publication.readingOrder.sumOf { link ->
@@ -161,7 +210,7 @@ class BookRepository(private val dir: File, private val readium: Readium) {
     }
 
     private suspend fun saveCover(id: String, publication: Publication) {
-        val bitmap = publication.coverFitting(Size(COVER_WIDTH, COVER_HEIGHT)) ?: return
+        val bitmap = publication.coverFitting(Size(COVER_WIDTH, COVER_HEIGHT)) ?: fallbackCover(publication) ?: return
         withContext(Dispatchers.IO) {
             coverDir.mkdirs()
             File(coverDir, "$id.jpg").outputStream().use { bitmap.compress(Bitmap.CompressFormat.JPEG, 85, it) }
@@ -181,6 +230,8 @@ class BookRepository(private val dir: File, private val readium: Readium) {
         runCatching { json.decodeFromString<List<Book>>(indexFile.readText()) }.getOrDefault(emptyList())
 
     private companion object {
+        /** Cover extraction rules version: 2 = added cover page / file name fallbacks */
+        const val COVER_VERSION = 2
         const val COVER_WIDTH = 480
         const val COVER_HEIGHT = 720
     }

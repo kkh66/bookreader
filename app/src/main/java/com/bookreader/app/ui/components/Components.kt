@@ -48,19 +48,22 @@ val PagePadding = 24.dp
 @Composable
 fun PageHeader(
     title: String,
-    subtitle: String,
+    subtitle: String? = null,
     modifier: Modifier = Modifier,
     horizontalPadding: Dp = PagePadding,
     actions: @Composable RowScope.() -> Unit = {},
 ) {
     Row(
         modifier.fillMaxWidth().padding(start = horizontalPadding, end = horizontalPadding, top = 20.dp, bottom = 8.dp),
-        verticalAlignment = Alignment.Top,
+        // Without a subtitle, the title and the buttons on the right are vertically centered
+        verticalAlignment = if (subtitle == null) Alignment.CenterVertically else Alignment.Top,
     ) {
         Column(Modifier.weight(1f)) {
             Text(title, fontSize = 34.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onBackground)
-            Spacer(Modifier.height(6.dp))
-            Text(subtitle, fontSize = 15.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            if (subtitle != null) {
+                Spacer(Modifier.height(6.dp))
+                Text(subtitle, fontSize = 15.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
         }
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp), content = actions)
     }

@@ -45,16 +45,15 @@ import com.bookreader.app.ui.components.SettingRow
 import com.bookreader.app.ui.components.SurfaceCard
 import com.bookreader.app.ui.theme.AppIcons
 import kotlinx.coroutines.launch
-import java.net.URI
 
 @Composable
 fun MeScreen(
-    onOpenServer: () -> Unit,
+    onOpenLibraries: () -> Unit,
     onOpenStats: () -> Unit,
     viewModel: MeViewModel = viewModel(factory = MeViewModel.Factory),
 ) {
     val themeMode by viewModel.themeMode.collectAsStateWithLifecycle()
-    val server by viewModel.server.collectAsStateWithLifecycle()
+    val libraries by viewModel.libraries.collectAsStateWithLifecycle()
     var choosingTheme by remember { mutableStateOf(false) }
     val snackbar = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
@@ -62,7 +61,7 @@ fun MeScreen(
 
     Box(Modifier.fillMaxSize()) {
         Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
-            PageHeader("我的", "按照你的方式阅读")
+            PageHeader("我的")
             Column(Modifier.padding(horizontal = PagePadding, vertical = 16.dp)) {
                 AppCard()
                 Gap(28)
@@ -77,9 +76,9 @@ fun MeScreen(
                 SectionTitle("书库", Modifier.padding(start = 4.dp, bottom = 12.dp))
                 SurfaceCard {
                     SettingRow(
-                        AppIcons.Server, "Calibre 服务器",
-                        value = runCatching { URI(server.url).host }.getOrNull() ?: "未设置",
-                        onClick = onOpenServer,
+                        AppIcons.Server, "网上书库",
+                        value = "${libraries.size} 个",
+                        onClick = onOpenLibraries,
                         showDivider = false,
                     )
                 }

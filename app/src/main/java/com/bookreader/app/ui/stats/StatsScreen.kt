@@ -29,6 +29,11 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.bookreader.app.data.DayStat
+import com.bookreader.app.ui.shelf.ShelfFormat
+import com.bookreader.app.ui.components.ProgressLine
+import com.bookreader.app.ui.components.COVER_RATIO
+import com.bookreader.app.ui.components.BookCover
+import androidx.compose.foundation.layout.aspectRatio
 import com.bookreader.app.ui.components.Gap
 import com.bookreader.app.ui.components.PageHeader
 import com.bookreader.app.ui.components.PagePadding
@@ -41,7 +46,7 @@ fun StatsScreen(viewModel: StatsViewModel = viewModel(factory = StatsViewModel.F
     val summary = state.summary
 
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
-        PageHeader("阅读统计", "每一页，都算数")
+        PageHeader("阅读统计")
         Column(
             Modifier.padding(horizontal = PagePadding, vertical = 16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
@@ -75,22 +80,31 @@ fun StatsScreen(viewModel: StatsViewModel = viewModel(factory = StatsViewModel.F
                     Column(Modifier.padding(24.dp)) {
                         Text("阅读记录", fontSize = 18.sp, fontWeight = FontWeight.Bold)
                         Gap(8)
-                        state.history.forEach { item ->
-                            Row(Modifier.padding(vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
-                                Column(Modifier.weight(1f)) {
-                                    Text(item.title, fontSize = 15.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                    Text(
-                                        item.author, fontSize = 12.sp, maxLines = 1,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    )
-                                }
-                                Text(duration(item.seconds), fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            }
-                        }
+                        state.history.forEach { RecordRow(it) }
                     }
                 }
             }
         }
+    }
+}
+
+/** Reading history: with cover and progress, like the shelf list */
+@Composable
+private fun RecordRow(item: BookTime) {
+    val book = item.book
+    val secondary = MaterialTheme.colorScheme.onSurfaceVariant
+    Row(Modifier.padding(vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+        BookCover(book.title, book.author, item.coverPath, Modifier.width(48.dp).aspectRatio(COVER_RATIO))
+        Column(Modifier.weight(1f).padding(horizontal = 14.dp)) {
+            Text(book.title, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(book.author, fontSize = 12.sp, color = secondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Gap(8)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                ProgressLine(book.progress.toFloat(), Modifier.weight(1f))
+                Text(ShelfFormat.percent(book.progress), fontSize = 12.sp, color = secondary, modifier = Modifier.padding(start = 8.dp))
+            }
+        }
+        Text(duration(item.seconds), fontSize = 14.sp, color = secondary)
     }
 }
 

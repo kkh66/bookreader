@@ -1,6 +1,6 @@
 package com.bookreader.app.data.opds
 
-import com.bookreader.app.data.SettingsRepository
+import com.bookreader.app.data.OpdsLibrary
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.Credentials
@@ -13,32 +13,26 @@ import java.io.IOException
 import java.io.InputStream
 
 /**
- * Read-only access to an OPDS server (Calibre / Calibre-Web): fetch feeds, download epubs
+ * Read-only access to OPDS libraries (Calibre, Calibre-Web, etc.): fetch feeds, download epubs
  */
-class OpdsRepository(
-    private val client: OkHttpClient,
-    private val settings: SettingsRepository,
-) {
+class OpdsRepository(private val client: OkHttpClient) {
 
-    val rootUrl: String get() = settings.server.value.url
-
-    suspend fun load(url: String): OpdsPage = withContext(Dispatchers.IO) {
-        call(url).use { OpdsParser.parse(it.body!!.string(), url) }
+    suspend fun load(library: OpdsLibrary, url: String = library.url): OpdsPage = withContext(Dispatchers.IO) {
+        call(library, url).use { OpdsParser.parse(it.body!!.string(), url) }
     }
 
     /** Downloads and hands the stream to [block]; the connection is closed afterwards */
-    suspend fun <T> download(url: String, block: suspend (InputStream) -> T): T =
+    suspend fun <T> download(library: OpdsLibrary, url: String, block: suspend (InputStream) -> T): T =
         withContext(Dispatchers.IO) {
-            call(url).use { block(it.body!!.byteStream()) }
+            call(library, url).use { block(it.body!!.byteStream()) }
         }
 
-    private fun call(url: String): Response {
-        val server = settings.server.value
+    private fun call(library: OpdsLibrary, url: String): Response {
         val target = url.toHttpUrl()
         val request = Request.Builder().url(target).apply {
-            // Send credentials only to the configured server, so external links in a feed never receive them
-            if (server.username.isNotBlank() && target.host == server.url.toHttpUrlOrNull()?.host) {
-                header("Authorization", Credentials.basic(server.username, server.password, Charsets.UTF_8))
+            // Send credentials only to this library's own host, so external links in a feed never receive them
+            if (library.username.isNotBlank() && target.host == library.url.toHttpUrlOrNull()?.host) {
+                header("Authorization", Credentials.basic(library.username, library.password, Charsets.UTF_8))
             }
         }.build()
         val response = client.newCall(request).execute()

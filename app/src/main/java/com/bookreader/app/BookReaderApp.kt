@@ -3,6 +3,7 @@ package com.bookreader.app
 import android.app.Application
 import android.content.Context
 import com.bookreader.app.data.BookRepository
+import com.bookreader.app.data.LibraryRepository
 import com.bookreader.app.data.SettingsRepository
 import com.bookreader.app.data.StatsRepository
 import com.bookreader.app.data.opds.OpdsRepository
@@ -30,7 +31,8 @@ class AppContainer(context: Context) {
     val readium = Readium(context)
     val books = BookRepository(File(context.filesDir, "books"), readium)
     val stats = StatsRepository(File(context.filesDir, "stats.json"))
-    val opds = OpdsRepository(OkHttpClient(), settings)
+    val libraries = LibraryRepository(File(context.filesDir, "libraries.json"), settings)
+    val opds = OpdsRepository(OkHttpClient())
     val reader = ReaderRepository(readium, books)
 }
 

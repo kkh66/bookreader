@@ -2,6 +2,7 @@ package com.bookreader.app.ui.shelf
 
 import android.content.ContentResolver
 import android.net.Uri
+import android.os.SystemClock
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider.AndroidViewModelFactory.Companion.APPLICATION_KEY
 import androidx.lifecycle.viewModelScope
@@ -10,6 +11,7 @@ import androidx.lifecycle.viewmodel.viewModelFactory
 import com.bookreader.app.container
 import com.bookreader.app.data.Book
 import com.bookreader.app.data.BookRepository
+import com.bookreader.app.data.SettingsRepository
 import com.bookreader.app.data.StatsRepository
 import com.bookreader.app.reader.ReaderRepository
 import kotlinx.coroutines.CancellationException
@@ -41,6 +43,7 @@ class ShelfViewModel(
     private val books: BookRepository,
     stats: StatsRepository,
     private val reader: ReaderRepository,
+    private val settings: SettingsRepository,
     private val resolver: ContentResolver,
 ) : ViewModel() {
 
@@ -80,9 +83,28 @@ class ShelfViewModel(
         query.value = value
     }
 
-    fun open(book: Book) = launchBusy {
-        reader.open(book)
-        _openReader.send(book.id)
+    val grid = settings.shelfGrid
+
+    fun setGrid(grid: Boolean) = settings.setShelfGrid(grid)
+
+    // A double tap would open two readers, and the second open would close the Publication the first one is using
+    private var opening = false
+    private var lastOpenAt = 0L
+
+    fun open(book: Book) {
+        val now = SystemClock.elapsedRealtime()
+        if (opening || now - lastOpenAt < OPEN_DEBOUNCE_MS) return
+        opening = true
+        lastOpenAt = now
+        launchBusy {
+            try {
+                reader.open(book)
+                _openReader.send(book.id)
+            } finally {
+                opening = false
+                lastOpenAt = SystemClock.elapsedRealtime()
+            }
+        }
     }
 
     fun importEpub(uri: Uri) = launchBusy {
@@ -113,10 +135,15 @@ class ShelfViewModel(
     }
 
     companion object {
+        private const val OPEN_DEBOUNCE_MS = 1000L
+
         val Factory = viewModelFactory {
             initializer {
                 val app = this[APPLICATION_KEY]!!
-                ShelfViewModel(app.container.books, app.container.stats, app.container.reader, app.contentResolver)
+                ShelfViewModel(
+                    app.container.books, app.container.stats, app.container.reader,
+                    app.container.settings, app.contentResolver,
+                )
             }
         }
     }
