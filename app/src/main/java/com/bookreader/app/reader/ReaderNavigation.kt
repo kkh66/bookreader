@@ -15,10 +15,12 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.systemBarsPadding
 import androidx.compose.foundation.layout.width
@@ -60,6 +62,7 @@ import androidx.compose.ui.window.DialogProperties
 import androidx.compose.ui.window.DialogWindowProvider
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.bookreader.app.data.Bookmark
+import com.bookreader.app.data.Highlight
 import com.bookreader.app.ui.components.Space
 import com.bookreader.app.ui.shelf.ShelfFormat
 import com.bookreader.app.ui.theme.AppIcons
@@ -86,6 +89,9 @@ internal fun ReaderNavigation(
     bookmarks: List<Bookmark>,
     onOpenBookmark: (Bookmark) -> Boolean,
     onRemoveBookmark: (Bookmark) -> Unit,
+    highlights: List<Highlight>,
+    onOpenHighlight: (Highlight) -> Boolean,
+    onRemoveHighlight: (Highlight) -> Unit,
     onDismiss: () -> Unit,
 ) {
     val context = LocalContext.current
@@ -97,6 +103,7 @@ internal fun ReaderNavigation(
     var currentChapter by remember { mutableIntStateOf(-1) }
     val chapterList = rememberLazyListState()
     val bookmarkList = rememberLazyListState()
+    val highlightList = rememberLazyListState()
     LaunchedEffect(locator) {
         currentChapter = currentChapterIndex(publication, navigator, chapters, locator)
     }
@@ -139,7 +146,7 @@ internal fun ReaderNavigation(
                     ) {
                         Column(Modifier.systemBarsPadding()) {
                             PrimaryTabRow(selectedTabIndex = selectedTab, containerColor = MaterialTheme.colorScheme.background) {
-                                listOf(AppIcons.List to "目录", AppIcons.Bookmark to "书签（${bookmarks.size}）")
+                                listOf(AppIcons.List to "目录", AppIcons.Bookmark to "书签（${bookmarks.size}）", AppIcons.Note to "笔记（${highlights.size}）")
                                     .forEachIndexed { index, (icon, label) ->
                                         Tab(
                                             selected = selectedTab == index,
@@ -182,6 +189,21 @@ internal fun ReaderNavigation(
                                         HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                                     }
                                 }
+                            } else if (selectedTab == 2) {
+                                if (highlights.isEmpty()) {
+                                    Text("还没有笔记，长按正文选中文字后可以高亮或写笔记", Modifier.padding(Space.L), color = secondary)
+                                } else {
+                                    LazyColumn(Modifier.weight(1f), state = highlightList) {
+                                        items(highlights, key = { it.id }) { highlight ->
+                                            HighlightRow(
+                                                highlight,
+                                                onClick = { if (onOpenHighlight(highlight)) close() },
+                                                onRemove = { onRemoveHighlight(highlight) },
+                                            )
+                                            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                                        }
+                                    }
+                                }
                             } else if (bookmarks.isEmpty()) {
                                 Text("还没有书签，点击底部的书签按钮添加", Modifier.padding(Space.L), color = secondary)
                             } else {
@@ -212,6 +234,33 @@ internal fun ReaderNavigation(
                 }
             }
         }
+    }
+}
+
+/** A highlight in the notes tab: color bar, marked text, note, chapter and position */
+@Composable
+private fun HighlightRow(highlight: Highlight, onClick: () -> Unit, onRemove: () -> Unit) {
+    val secondary = MaterialTheme.colorScheme.onSurfaceVariant
+    Row(
+        Modifier.fillMaxWidth().height(IntrinsicSize.Min).clickable(onClick = onClick)
+            .padding(start = Space.L, end = Space.XS, top = Space.M, bottom = Space.M),
+    ) {
+        Box(Modifier.width(3.dp).fillMaxHeight().background(Color(highlightColor(highlight.color))))
+        Column(Modifier.weight(1f).padding(start = Space.S)) {
+            Text(highlight.text, fontSize = 15.sp, maxLines = 3, overflow = TextOverflow.Ellipsis)
+            if (highlight.note.isNotBlank()) {
+                Text(
+                    highlight.note, fontSize = 13.sp, color = MaterialTheme.colorScheme.primary,
+                    maxLines = 3, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = Space.XS),
+                )
+            }
+            Text(
+                listOfNotNull(highlight.chapter?.takeIf { it.isNotBlank() }, ShelfFormat.percent(highlight.progress)).joinToString(" · "),
+                fontSize = 12.sp, color = secondary, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.padding(top = Space.XS),
+            )
+        }
+        TextButton(onClick = onRemove, modifier = Modifier.align(Alignment.CenterVertically)) { Text("删除") }
     }
 }
 

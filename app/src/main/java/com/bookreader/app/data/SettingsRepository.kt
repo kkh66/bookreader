@@ -62,6 +62,18 @@ class SettingsRepository(context: Context) {
         _readingStyle.value = style
     }
 
+    /** Style and color of the last highlight, preselected for the next one */
+    private val _lastHighlight = MutableStateFlow(
+        (HighlightKind.entries.getOrNull(prefs.getInt(KEY_HIGHLIGHT_KIND, 0)) ?: HighlightKind.Highlight) to
+            prefs.getInt(KEY_HIGHLIGHT_COLOR, 0)
+    )
+    val lastHighlight: StateFlow<Pair<HighlightKind, Int>> = _lastHighlight.asStateFlow()
+
+    fun setLastHighlight(kind: HighlightKind, color: Int) {
+        prefs.edit().putInt(KEY_HIGHLIGHT_KIND, kind.ordinal).putInt(KEY_HIGHLIGHT_COLOR, color).apply()
+        _lastHighlight.value = kind to color
+    }
+
     /** Toggle setting: stored in prefs and exposed as a StateFlow for the UI to observe */
     inner class Toggle(private val key: String, default: Boolean) {
         private val _state = MutableStateFlow(prefs.getBoolean(key, default))
@@ -101,5 +113,7 @@ class SettingsRepository(context: Context) {
         const val KEY_LIBRARY_GRID = "library_grid"
         const val KEY_SHELF_GRID = "shelf_grid"
         const val KEY_READING_STYLE = "reading_style"
+        const val KEY_HIGHLIGHT_KIND = "highlight_kind"
+        const val KEY_HIGHLIGHT_COLOR = "highlight_color"
     }
 }

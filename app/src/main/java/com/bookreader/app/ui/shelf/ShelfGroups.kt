@@ -188,6 +188,8 @@ fun GroupNameDialog(title: String, initial: String, onConfirm: (String) -> Unit,
 @Composable
 fun GroupDialog(
     group: ShelfEntry.Group,
+    /** Book being opened, shown with a spinner over its cover */
+    openingId: String?,
     candidates: List<ShelfItem>,
     onOpen: (Book) -> Unit,
     onAdd: (List<String>) -> Unit,
@@ -358,6 +360,7 @@ fun GroupDialog(
                             item,
                             selecting = selecting,
                             selected = id in selected,
+                            loading = id == openingId,
                             onClick = { if (selecting) selected = selected.toggle(id) else onOpen(item.book) },
                             onLongClick = {
                                 if (!selecting) {
@@ -450,11 +453,18 @@ private fun SheetButton(
 
 /** A book in the group sheet or the add picker: cover (with a check mark while selecting), two-line title, progress */
 @Composable
-private fun GroupBook(item: ShelfItem, selecting: Boolean, selected: Boolean, onClick: () -> Unit, onLongClick: () -> Unit) {
+private fun GroupBook(
+    item: ShelfItem,
+    selecting: Boolean,
+    selected: Boolean,
+    onClick: () -> Unit,
+    onLongClick: () -> Unit,
+    loading: Boolean = false,
+) {
     val book = item.book
     Column(Modifier.padding(bottom = Space.L).combinedClickable(onClick = onClick, onLongClick = onLongClick)) {
         Box {
-            BookCover(book.title, book.author, item.coverPath, Modifier.fillMaxWidth().aspectRatio(COVER_RATIO))
+            BookCover(book.title, book.author, item.coverPath, Modifier.fillMaxWidth().aspectRatio(COVER_RATIO), loading)
             if (selecting) SelectMark(selected, Modifier.align(Alignment.TopEnd).padding(Space.XS))
         }
         Gap(Space.S)

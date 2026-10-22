@@ -2,4 +2,11 @@
 <resources>
     <!-- The reader hosts Readium's Fragment in an AppCompatActivity, so the whole app uses an AppCompat theme -->
     <style name="Theme.BookReader" parent="Theme.AppCompat.DayNight.NoActionBar" />
+
+    <!-- Launch screen of the main activity: the book on the icon's indigo, then the app theme -->
+    <style name="Theme.BookReader.Starting" parent="Theme.SplashScreen">
+        <item name="windowSplashScreenBackground">#FF3F2BBF</item>
+        <item name="windowSplashScreenAnimatedIcon">@drawable/splash_icon</item>
+        <item name="postSplashScreenTheme">@style/Theme.BookReader</item>
+    </style>
 </resources>

@@ -59,6 +59,7 @@ data class Book(
     /** Character count of the whole book (excluding whitespace), null if not counted yet */
     val totalChars: Long? = null,
     val bookmarks: List<Bookmark> = emptyList(),
+    val highlights: List<Highlight> = emptyList(),
     /** Name of the user-created shelf group, null if not in a group */
     val group: String? = null,
 )
@@ -191,6 +192,27 @@ class BookRepository(private val dir: File, private val readium: Readium) {
             }
         }
         return added
+    }
+
+    /** Adds a highlight, or replaces the one with the same id (style, color or note changed) */
+    suspend fun saveHighlight(bookId: String, highlight: Highlight) {
+        update { list ->
+            require(list.any { it.id == bookId }) { "书籍已删除" }
+            list.map { book ->
+                if (book.id != bookId) book else {
+                    val others = book.highlights.filterNot { it.id == highlight.id }
+                    book.copy(highlights = (others + highlight).sortedBy { it.progress })
+                }
+            }
+        }
+    }
+
+    suspend fun removeHighlight(bookId: String, highlightId: String) {
+        update { list ->
+            list.map { book ->
+                if (book.id == bookId) book.copy(highlights = book.highlights.filterNot { it.id == highlightId }) else book
+            }
+        }
     }
 
     suspend fun removeBookmark(bookId: String, bookmarkId: String) {

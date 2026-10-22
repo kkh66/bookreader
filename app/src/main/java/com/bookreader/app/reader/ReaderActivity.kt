@@ -4,17 +4,22 @@ import android.content.Context
 import android.content.Intent
 import android.content.res.Configuration
 import android.graphics.Color.TRANSPARENT
+import android.graphics.RectF
 import android.net.Uri
 import android.os.Bundle
 import android.os.SystemClock
 import android.view.Gravity
+import android.view.ActionMode
 import android.view.KeyEvent
+import android.view.Menu
+import android.view.MenuItem
 import android.view.View
 import android.view.ViewGroup.LayoutParams.MATCH_PARENT
 import android.view.ViewGroup.LayoutParams.WRAP_CONTENT
 import android.widget.FrameLayout
 import android.widget.Toast
 import androidx.activity.SystemBarStyle
+import androidx.activity.compose.BackHandler
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
 import androidx.appcompat.app.AppCompatActivity
@@ -34,6 +39,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -66,6 +72,8 @@ import com.bookreader.app.container
 import com.bookreader.app.R
 import com.bookreader.app.data.Book
 import com.bookreader.app.data.Bookmark
+import com.bookreader.app.data.Highlight
+import com.bookreader.app.data.HighlightKind
 import com.bookreader.app.data.ReadingStyle
 import com.bookreader.app.data.SettingsRepository
 import com.bookreader.app.data.ThemeMode
@@ -79,9 +87,12 @@ import com.bookreader.app.ui.theme.isDark
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import org.json.JSONObject
 import org.readium.r2.navigator.Decoration
+import org.readium.r2.navigator.DecorableNavigator
 import org.readium.r2.navigator.epub.EpubNavigatorFragment
 import org.readium.r2.navigator.epub.EpubPreferences
 import org.readium.r2.navigator.input.InputListener
@@ -114,6 +125,44 @@ class ReaderActivity : AppCompatActivity(), EpubNavigatorFragment.Listener {
     /** With the status bar hidden the text reaches the top edge, so the menu's top bar must leave room for the status bar itself (px) */
     private val headerInset = mutableIntStateOf(0)
 
+    /** Popup menu over the page, for a text selection or a tapped highlight */
+    private val markTarget = mutableStateOf<MarkTarget?>(null)
+
+    /** Highlight whose note is being edited */
+    private val editingNote = mutableStateOf<Highlight?>(null)
+
+    /** Search state, shared by the bottom menu and the selection menu's in-book search */
+    private val search = ReaderSearchState()
+    private val showingSearch = mutableStateOf(false)
+
+    private var selectionWatch: Job? = null
+
+    private val navigator get() = supportFragmentManager.findFragmentByTag(NAVIGATOR_TAG) as EpubNavigatorFragment
+
+    /**
+     * Replaces the system text selection toolbar: an empty action mode keeps the selection handles,
+     * while [MarkMenu] shows next to the selection instead
+     */
+    private val selectionCallback = object : ActionMode.Callback {
+        override fun onCreateActionMode(mode: ActionMode, menu: Menu): Boolean {
+            menu.clear()
+            watchSelection()
+            return true
+        }
+
+        override fun onPrepareActionMode(mode: ActionMode, menu: Menu): Boolean {
+            menu.clear()
+            return true
+        }
+
+        override fun onActionItemClicked(mode: ActionMode, item: MenuItem) = false
+
+        override fun onDestroyActionMode(mode: ActionMode) {
+            selectionWatch?.cancel()
+            if (markTarget.value is MarkTarget.Selection) markTarget.value = null
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         val session = container.reader[bookId]
         if (session == null) {
@@ -130,6 +179,8 @@ class ReaderActivity : AppCompatActivity(), EpubNavigatorFragment.Listener {
             initialPreferences = readerPreferences(dark, container.settings.readingStyle.value),
             listener = this,
             configuration = EpubNavigatorFragment.Configuration {
+                decorationTemplates = highlightTemplates()
+                selectionActionModeCallback = selectionCallback
                 // Imported fonts, each served as a resource of the publication (see ReaderRepository)
                 session.fonts.forEach { served ->
                     addFontFamilyDeclaration(FontFamily(served.font.family)) {
@@ -161,6 +212,11 @@ class ReaderActivity : AppCompatActivity(), EpubNavigatorFragment.Listener {
             id = R.id.reader_footer
             setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed)
         }
+        // Selection / highlight menu; touches pass through to the page wherever nothing is shown
+        val marks = ComposeView(this).apply {
+            id = R.id.reader_marks
+            setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed)
+        }
         // The page stops above the status line; the menus still overlay both
         val footerHeight = (FOOTER_HEIGHT.value * resources.displayMetrics.density).roundToInt()
         val content = FrameLayout(this).apply {
@@ -168,6 +224,8 @@ class ReaderActivity : AppCompatActivity(), EpubNavigatorFragment.Listener {
             addView(footer, FrameLayout.LayoutParams(MATCH_PARENT, footerHeight, Gravity.BOTTOM))
             addView(controls, FrameLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT, Gravity.TOP))
             addView(bottomControls, FrameLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT, Gravity.BOTTOM))
+            // On top so the menu is never hidden under the reader's bars
+            addView(marks, FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT).apply { bottomMargin = footerHeight })
         }
         hideStatusBar = container.settings.readerHideStatusBar.state.value
         ViewCompat.setOnApplyWindowInsetsListener(content) { view, insets ->
@@ -193,6 +251,11 @@ class ReaderActivity : AppCompatActivity(), EpubNavigatorFragment.Listener {
         navigator.addInputListener(DirectionalNavigationAdapter(navigator, animatedTransition = true))
         navigator.addInputListener(object : InputListener {
             override fun onTap(event: TapEvent): Boolean {
+                // A tap anywhere on the page first closes an open highlight menu
+                if (markTarget.value != null) {
+                    closeMarkMenu()
+                    return true
+                }
                 val width = navigator.publicationView.width
                 val edge = maxOf(80f, width * 0.3f)
                 if (event.point.x <= edge || event.point.x >= width - edge) return false
@@ -204,6 +267,81 @@ class ReaderActivity : AppCompatActivity(), EpubNavigatorFragment.Listener {
             }
         })
 
+        navigator.addDecorationListener(HIGHLIGHT_GROUP, object : DecorableNavigator.Listener {
+            override fun onDecorationActivated(event: DecorableNavigator.OnActivatedEvent): Boolean {
+                val highlight = currentBook()?.highlights?.firstOrNull { it.id == event.decoration.id } ?: return false
+                val rect = event.rect ?: event.point?.let { RectF(it.x, it.y, it.x, it.y) } ?: return false
+                selectionWatch?.cancel()
+                markTarget.value = MarkTarget.Existing(highlight, rect)
+                return true
+            }
+        })
+        marks.setContent {
+            val books by viewModel.bookList.collectAsStateWithLifecycle()
+            val last by container.settings.lastHighlight.collectAsStateWithLifecycle()
+            val highlights = books.firstOrNull { it.id == bookId }?.highlights.orEmpty()
+            ReaderTheme {
+                markTarget.value?.let { target ->
+                    BackHandler(onBack = ::closeMarkMenu)
+                    // Latest copy of the highlight, falling back to the one the menu opened with until the save lands
+                    val current = (target as? MarkTarget.Existing)?.let { t -> highlights.firstOrNull { it.id == t.highlight.id } ?: t.highlight }
+                    val text = current?.text ?: (target as? MarkTarget.Selection)?.locator?.text?.highlight.orEmpty()
+                    MarkMenu(
+                        target = target,
+                        current = current,
+                        lastKind = last.first,
+                        lastColor = last.second,
+                        onStyle = { kind, color -> applyMarkStyle(target, current, kind, color) },
+                        onHighlight = {
+                            (target as? MarkTarget.Selection)?.let { viewModel.createHighlight(bookId, it.locator, last.first, last.second) }
+                            closeMarkMenu()
+                        },
+                        onCopy = {
+                            TextActions.copy(this, text)
+                            closeMarkMenu()
+                        },
+                        onNote = {
+                            editingNote.value = current
+                                ?: (target as? MarkTarget.Selection)?.let { viewModel.createHighlight(bookId, it.locator, last.first, last.second) }
+                            closeMarkMenu()
+                        },
+                        onDelete = {
+                            current?.let { viewModel.removeHighlight(bookId, it.id) }
+                            closeMarkMenu()
+                        },
+                        onDictionary = {
+                            TextActions.lookUp(this, text)
+                            closeMarkMenu()
+                        },
+                        onSearch = {
+                            search.query = text
+                            search.run(lifecycleScope, session.publication)
+                            showingSearch.value = true
+                            closeMarkMenu()
+                        },
+                        onShare = {
+                            TextActions.share(this, text)
+                            closeMarkMenu()
+                        },
+                        onWebSearch = {
+                            TextActions.webSearch(this, text)
+                            closeMarkMenu()
+                        },
+                    )
+                }
+                editingNote.value?.let { editing ->
+                    val highlight = highlights.firstOrNull { it.id == editing.id } ?: editing
+                    NoteDialog(
+                        highlight,
+                        onSave = { note ->
+                            viewModel.saveHighlight(bookId, highlight.copy(note = note))
+                            editingNote.value = null
+                        },
+                        onDismiss = { editingNote.value = null },
+                    )
+                }
+            }
+        }
         footer.setContent {
             val locator by navigator.currentLocator.collectAsStateWithLifecycle()
             val mode by container.settings.themeMode.collectAsStateWithLifecycle()
@@ -242,6 +380,15 @@ class ReaderActivity : AppCompatActivity(), EpubNavigatorFragment.Listener {
                     onRemove = { viewModel.removeBookmark(bookId, it.id, ::showMessage) },
                     settings = container.settings,
                     fonts = session.fonts.map { it.font },
+                    search = search,
+                    showingSearch = showingSearch,
+                    onOpenHighlight = { highlight ->
+                        val target = runCatching { Locator.fromJSON(JSONObject(highlight.locator)) }.getOrNull()
+                        val opened = target != null && navigator.go(target)
+                        if (!opened) showMessage("无法跳转到此笔记")
+                        opened
+                    },
+                    onRemoveHighlight = { viewModel.removeHighlight(bookId, it.id) },
                 )
             }
         }
@@ -249,6 +396,15 @@ class ReaderActivity : AppCompatActivity(), EpubNavigatorFragment.Listener {
         lifecycleScope.launch {
             repeatOnLifecycle(Lifecycle.State.STARTED) {
                 launch { navigator.currentLocator.collect { viewModel.saveProgress(bookId, it) } }
+                // Saved highlights drawn on the page; Readium only redraws what changed
+                launch {
+                    viewModel.bookList
+                        .map { list -> list.firstOrNull { it.id == bookId }?.highlights.orEmpty() }
+                        .distinctUntilChanged()
+                        .collect { highlights ->
+                            navigator.applyDecorations(highlights.mapNotNull { it.toDecoration() }, HIGHLIGHT_GROUP)
+                        }
+                }
                 // Appearance (Me tab) and text style (reading settings) apply to the page right away
                 launch {
                     combine(container.settings.themeMode, container.settings.readingStyle, ::Pair).collect { (mode, style) ->
@@ -276,6 +432,47 @@ class ReaderActivity : AppCompatActivity(), EpubNavigatorFragment.Listener {
         } else {
             controller.show(WindowInsetsCompat.Type.statusBars())
         }
+    }
+
+    private fun currentBook() = viewModel.bookList.value.firstOrNull { it.id == bookId }
+
+    /** Keeps the menu next to the selection while its handles are dragged, and closes it once the selection is gone */
+    private fun watchSelection() {
+        selectionWatch?.cancel()
+        selectionWatch = lifecycleScope.launch {
+            while (true) {
+                val selection = navigator.currentSelection()
+                if (markTarget.value !is MarkTarget.Existing) {
+                    markTarget.value = selection?.let {
+                        MarkTarget.Selection(it.locator, it.rect ?: RectF(0f, 0f, navigator.publicationView.width.toFloat(), 0f))
+                    }
+                }
+                delay(SELECTION_WATCH_MS)
+            }
+        }
+    }
+
+    /**
+     * A kind or color tapped in the menu: remembered for next time and applied to the highlight being edited;
+     * on a fresh selection it creates the highlight, and the menu stays open to keep adjusting it
+     */
+    private fun applyMarkStyle(target: MarkTarget, current: Highlight?, kind: HighlightKind, color: Int) {
+        container.settings.setLastHighlight(kind, color)
+        when {
+            current != null -> viewModel.saveHighlight(bookId, current.copy(kind = kind, color = color))
+            target is MarkTarget.Selection -> {
+                val created = viewModel.createHighlight(bookId, target.locator, kind, color)
+                selectionWatch?.cancel()
+                markTarget.value = MarkTarget.Existing(created, target.rect)
+                navigator.clearSelection()
+            }
+        }
+    }
+
+    private fun closeMarkMenu() {
+        selectionWatch?.cancel()
+        markTarget.value = null
+        navigator.clearSelection()
     }
 
     override fun onKeyDown(keyCode: Int, event: KeyEvent): Boolean {
@@ -393,6 +590,9 @@ private fun ReaderHeader(title: String, topInset: Dp, onBack: () -> Unit) {
 
 private const val SEEK_SETTLE_MS = 500L
 
+/** How often the selection menu follows the selection while its handles are dragged */
+private const val SELECTION_WATCH_MS = 300L
+
 /** Decoration group for the in-page highlight of the last opened search hit */
 private const val SEARCH_GROUP = "search"
 
@@ -430,13 +630,15 @@ private fun ReaderControls(
     onToggle: () -> Unit,
     onOpen: (Bookmark) -> Boolean,
     onRemove: (Bookmark) -> Unit,
+    onOpenHighlight: (Highlight) -> Boolean,
+    onRemoveHighlight: (Highlight) -> Unit,
+    search: ReaderSearchState,
+    showingSearch: MutableState<Boolean>,
     settings: SettingsRepository,
     fonts: List<UserFont>,
 ) {
     var showingNavigation by rememberSaveable { mutableStateOf(false) }
     var showingSettings by rememberSaveable { mutableStateOf(false) }
-    var showingSearch by rememberSaveable { mutableStateOf(false) }
-    val search = remember(publication) { ReaderSearchState() }
     val locationId = bookmarkId(locator.href.toString(), locator.locations.position, locator.locations.progression)
     val bookmarked = book.bookmarks.any { it.id == locationId }
     val scope = rememberCoroutineScope()
@@ -509,7 +711,7 @@ private fun ReaderControls(
                         if (bookmarked) "移除当前书签" else "添加书签",
                     )
                 }
-                IconButton(onClick = { showingSearch = true }) { Icon(AppIcons.Search, "搜索") }
+                IconButton(onClick = { showingSearch.value = true }) { Icon(AppIcons.Search, "搜索") }
                 IconButton(onClick = { showingSettings = true }) { Icon(AppIcons.Settings, "阅读设置") }
             }
         }
@@ -517,7 +719,7 @@ private fun ReaderControls(
     if (showingSettings) {
         ReaderSettingsDialog(settings, fonts, onDismiss = { showingSettings = false })
     }
-    if (showingSearch) {
+    if (showingSearch.value) {
         ReaderSearchDialog(
             state = search,
             onSearch = {
@@ -527,7 +729,7 @@ private fun ReaderControls(
             },
             onOpen = { hit ->
                 if (navigator.go(hit)) {
-                    showingSearch = false
+                    showingSearch.value = false
                     // Mark the hit on the page so it's easy to spot after the jump
                     scope.launch {
                         navigator.applyDecorations(
@@ -539,7 +741,7 @@ private fun ReaderControls(
                     onMessage("无法跳转到此位置")
                 }
             },
-            onDismiss = { showingSearch = false },
+            onDismiss = { showingSearch.value = false },
         )
     }
     if (showingNavigation) {
@@ -549,6 +751,9 @@ private fun ReaderControls(
             bookmarks = book.bookmarks,
             onOpenBookmark = onOpen,
             onRemoveBookmark = onRemove,
+            highlights = book.highlights,
+            onOpenHighlight = onOpenHighlight,
+            onRemoveHighlight = onRemoveHighlight,
             onDismiss = { showingNavigation = false },
         )
     }

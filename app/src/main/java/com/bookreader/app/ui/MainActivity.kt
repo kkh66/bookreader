@@ -2,6 +2,8 @@ package com.bookreader.app.ui
 
 import android.graphics.Color.TRANSPARENT
 import android.os.Bundle
+import android.os.SystemClock
+import android.view.animation.AccelerateInterpolator
 import androidx.activity.ComponentActivity
 import androidx.activity.SystemBarStyle
 import androidx.activity.compose.BackHandler
@@ -10,6 +12,7 @@ import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
+import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.compose.foundation.background
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.text.font.FontWeight
@@ -76,6 +79,9 @@ class MainViewModel(settings: SettingsRepository) : ViewModel() {
     }
 }
 
+private const val SPLASH_MAX_MS = 3_000L
+private const val SPLASH_EXIT_MS = 300L
+
 class MainActivity : ComponentActivity() {
 
     private val viewModel: MainViewModel by viewModels { MainViewModel.Factory }
@@ -84,10 +90,24 @@ class MainActivity : ComponentActivity() {
     private val shelfViewModel: ShelfViewModel by viewModels { ShelfViewModel.Factory }
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        val splash = installSplashScreen()
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
         // Reopen the last book per the setting only on cold start, not on recreation such as rotation
         if (savedInstanceState == null) shelfViewModel.openLastOnLaunch()
+        // The splash stays while that book opens, capped so a slow book never holds the app back
+        val shownAt = SystemClock.elapsedRealtime()
+        splash.setKeepOnScreenCondition {
+            shelfViewModel.launching.value && SystemClock.elapsedRealtime() - shownAt < SPLASH_MAX_MS
+        }
+        // Leaves with the icon growing as the whole screen fades into the shelf (or the book)
+        splash.setOnExitAnimationListener { provider ->
+            provider.iconView.animate().scaleX(1.4f).scaleY(1.4f).setDuration(SPLASH_EXIT_MS).start()
+            provider.view.animate().alpha(0f).setDuration(SPLASH_EXIT_MS)
+                .setInterpolator(AccelerateInterpolator())
+                .withEndAction(provider::remove)
+                .start()
+        }
         setContent {
             val mode by viewModel.themeMode.collectAsStateWithLifecycle()
             val dark = when (mode) {

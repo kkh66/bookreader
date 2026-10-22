@@ -3,6 +3,12 @@ package com.bookreader.app.ui.components
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.util.LruCache
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -44,9 +50,9 @@ const val COVER_RATIO = 0.7f
 
 private val coverCache = LruCache<String, ImageBitmap>(48)
 
-/** Book cover: shows the extracted cover image if there is one, otherwise a cover generated from the title */
+/** Book cover: shows the extracted cover image if there is one, otherwise a cover generated from the title; [loading] dims it with a spinner */
 @Composable
-fun BookCover(title: String, author: String, coverPath: String?, modifier: Modifier = Modifier) {
+fun BookCover(title: String, author: String, coverPath: String?, modifier: Modifier = Modifier, loading: Boolean = false) {
     // State is keyed on the path, so recycled list items don't keep the previous book's cover
     val bitmap = remember(coverPath) { mutableStateOf(coverPath?.let { coverCache.get(it) }) }
     LaunchedEffect(coverPath) {
@@ -56,7 +62,7 @@ fun BookCover(title: String, author: String, coverPath: String?, modifier: Modif
             }
         }
     }
-    CoverFrame(title, author, bitmap.value, modifier)
+    CoverFrame(title, author, bitmap.value, modifier, loading)
 }
 
 /**
@@ -79,7 +85,7 @@ fun RemoteCover(
 
 /** Cover frame: rounded corners + spine shadow on the left; uses the generated cover when there is no image */
 @Composable
-fun CoverFrame(title: String, author: String, image: ImageBitmap?, modifier: Modifier = Modifier) {
+fun CoverFrame(title: String, author: String, image: ImageBitmap?, modifier: Modifier = Modifier, loading: Boolean = false) {
     Box(modifier.clip(RoundedCornerShape(6.dp))) {
         if (image != null) {
             Image(image, title, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
@@ -91,6 +97,16 @@ fun CoverFrame(title: String, author: String, image: ImageBitmap?, modifier: Mod
             Modifier.fillMaxHeight().width(6.dp)
                 .background(Brush.horizontalGradient(listOf(Color.Black.copy(alpha = 0.28f), Color.Transparent))),
         )
+        // Opening the book: dim the cover with a spinner sized to the cover, so small list covers fit it too
+        AnimatedVisibility(loading, Modifier.matchParentSize(), enter = fadeIn(), exit = fadeOut()) {
+            Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.45f)), contentAlignment = Alignment.Center) {
+                CircularProgressIndicator(
+                    Modifier.fillMaxWidth(0.36f).aspectRatio(1f),
+                    color = Color.White,
+                    strokeWidth = 2.5.dp,
+                )
+            }
+        }
     }
 }
 

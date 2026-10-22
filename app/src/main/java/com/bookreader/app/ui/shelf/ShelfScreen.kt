@@ -78,6 +78,7 @@ fun ShelfScreen(
     val context = LocalContext.current
     val snackbar = remember { SnackbarHostState() }
     val grid by viewModel.grid.collectAsStateWithLifecycle()
+    val openingId by viewModel.openingId.collectAsStateWithLifecycle()
     var searching by rememberSaveable { mutableStateOf(false) }
     /** Books waiting for delete confirmation: one from a long-press, several from group batch management */
     var pendingDelete by remember { mutableStateOf<List<Book>?>(null) }
@@ -140,7 +141,7 @@ fun ShelfScreen(
                     Column(Modifier.padding(top = Space.XL)) {
                         Text("继续阅读", fontSize = 24.sp, fontWeight = FontWeight.Bold)
                         Gap(Space.M)
-                        ContinueCard(current) { viewModel.open(current.book) }
+                        ContinueCard(current, loading = openingId == current.book.id) { viewModel.open(current.book) }
                     }
                 }
             }
@@ -171,9 +172,9 @@ fun ShelfScreen(
                                     onDragCancel = drag::cancel,
                                 )
                             if (grid) {
-                                GridBook(item, highlighted, modifier)
+                                GridBook(item, highlighted, loading = openingId == item.book.id, modifier)
                             } else {
-                                ListBook(item, highlighted, modifier) { pendingDelete = listOf(item.book) }
+                                ListBook(item, highlighted, loading = openingId == item.book.id, modifier) { pendingDelete = listOf(item.book) }
                             }
                         }
                         is ShelfEntry.Group -> {
@@ -193,6 +194,7 @@ fun ShelfScreen(
     if (group != null) {
         GroupDialog(
             group,
+            openingId = openingId,
             // Everything on the shelf that isn't already in this group can be added
             candidates = state.entries.flatMap { entry ->
                 when (entry) {
@@ -259,12 +261,12 @@ private fun percent(progress: Double) = ShelfFormat.percent(progress)
 
 /** Continue reading: a compact one-row card, clickable as a whole */
 @Composable
-private fun ContinueCard(item: ShelfItem, onContinue: () -> Unit) {
+private fun ContinueCard(item: ShelfItem, loading: Boolean, onContinue: () -> Unit) {
     val book = item.book
     val secondary = MaterialTheme.colorScheme.onSurfaceVariant
     SurfaceCard(onClick = onContinue) {
         Row(Modifier.padding(Space.L), verticalAlignment = Alignment.CenterVertically) {
-            BookCover(book.title, book.author, item.coverPath, Modifier.width(52.dp).aspectRatio(COVER_RATIO))
+            BookCover(book.title, book.author, item.coverPath, Modifier.width(52.dp).aspectRatio(COVER_RATIO), loading)
             Column(Modifier.weight(1f).padding(horizontal = Space.M)) {
                 Text(book.title, fontSize = 16.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 Gap(Space.XS)
@@ -310,12 +312,13 @@ private fun ModeIcon(icon: androidx.compose.ui.graphics.vector.ImageVector, labe
 }
 
 @Composable
-private fun GridBook(item: ShelfItem, highlighted: Boolean, modifier: Modifier) {
+private fun GridBook(item: ShelfItem, highlighted: Boolean, loading: Boolean, modifier: Modifier) {
     val book = item.book
     Column(Modifier.padding(bottom = Space.XL).then(modifier)) {
         BookCover(
             book.title, book.author, item.coverPath,
             Modifier.dropHighlight(highlighted).fillMaxWidth().aspectRatio(COVER_RATIO),
+            loading,
         )
         Gap(Space.M)
         Text(book.title, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -332,7 +335,7 @@ private fun GridBook(item: ShelfItem, highlighted: Boolean, modifier: Modifier) 
 
 /** List row: cover + title (two lines) + author + progress bar + reading time/speed + date range + overflow menu */
 @Composable
-private fun ListBook(item: ShelfItem, highlighted: Boolean, modifier: Modifier, onDelete: () -> Unit) {
+private fun ListBook(item: ShelfItem, highlighted: Boolean, loading: Boolean, modifier: Modifier, onDelete: () -> Unit) {
     val book = item.book
     val secondary = MaterialTheme.colorScheme.onSurfaceVariant
     var menu by remember { mutableStateOf(false) }
@@ -340,6 +343,7 @@ private fun ListBook(item: ShelfItem, highlighted: Boolean, modifier: Modifier, 
         BookCover(
             book.title, book.author, item.coverPath,
             Modifier.dropHighlight(highlighted).width(64.dp).aspectRatio(COVER_RATIO),
+            loading,
         )
         Column(Modifier.weight(1f).padding(start = Space.L)) {
             Row {

@@ -19,6 +19,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.receiveAsFlow
@@ -116,10 +118,20 @@ class ShelfViewModel(
 
     fun setGrid(grid: Boolean) = settings.setShelfGrid(grid)
 
+    /** Book being opened, shown with a spinner over its cover */
+    private val _openingId = MutableStateFlow<String?>(null)
+    val openingId: StateFlow<String?> = _openingId.asStateFlow()
+
+    /** True while the last book opens on launch; the splash screen waits for it */
+    private val _launching = MutableStateFlow(false)
+    val launching: StateFlow<Boolean> = _launching.asStateFlow()
+
     /** Called on cold start: if "open last book on launch" is on, open the most recently read book */
     fun openLastOnLaunch() {
         if (!settings.openLastOnLaunch.state.value) return
-        books.books.value.filter { it.lastReadAt > 0 }.maxByOrNull { it.lastReadAt }?.let(::open)
+        val book = books.books.value.filter { it.lastReadAt > 0 }.maxByOrNull { it.lastReadAt } ?: return
+        _launching.value = true
+        open(book)
     }
 
     // A double tap would open two readers, and the second open would close the Publication the first one is using
@@ -128,16 +140,22 @@ class ShelfViewModel(
 
     fun open(book: Book) {
         val now = SystemClock.elapsedRealtime()
-        if (opening || now - lastOpenAt < OPEN_DEBOUNCE_MS) return
+        if (opening || now - lastOpenAt < OPEN_DEBOUNCE_MS) {
+            _launching.value = false
+            return
+        }
         opening = true
         lastOpenAt = now
-        launchBusy {
+        _openingId.value = book.id
+        launchCatching {
             try {
                 reader.open(book)
                 _openReader.send(book.id)
             } finally {
                 opening = false
                 lastOpenAt = SystemClock.elapsedRealtime()
+                _openingId.value = null
+                _launching.value = false
             }
         }
     }

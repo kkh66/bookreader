@@ -4,6 +4,7 @@ plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.compose.compiler)
     alias(libs.plugins.kotlin.serialization)
+    alias(libs.plugins.kotlin.parcelize)
 }
 
 // Release signing comes from ORG_GRADLE_PROJECT_RELEASE_* environment variables; unsigned when they are not set
@@ -17,8 +18,8 @@ android {
         applicationId = "com.bookreader.app"
         minSdk = 24
         targetSdk = 37
-        versionCode = 16
-        versionName = "0.3.8"
+        versionCode = 17
+        versionName = "0.3.9"
     }
 
     signingConfigs {
@@ -73,6 +74,7 @@ dependencies {
     implementation(libs.androidx.appcompat)
     implementation(libs.androidx.fragment.ktx)
     implementation(libs.compose.ui)
+    implementation(libs.androidx.core.splashscreen)
     implementation(libs.compose.foundation)
     implementation(libs.compose.material3)
     implementation(libs.lifecycle.viewmodel.compose)

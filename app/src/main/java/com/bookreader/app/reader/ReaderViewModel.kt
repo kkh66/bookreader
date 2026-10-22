@@ -8,11 +8,14 @@ import androidx.lifecycle.viewmodel.viewModelFactory
 import com.bookreader.app.container
 import com.bookreader.app.data.Bookmark
 import com.bookreader.app.data.BookRepository
+import com.bookreader.app.data.Highlight
+import com.bookreader.app.data.HighlightKind
 import com.bookreader.app.data.StatsRepository
 import com.bookreader.app.data.bookmarkId
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 import org.readium.r2.shared.publication.Locator
+import java.util.UUID
 
 class ReaderViewModel(
     private val books: BookRepository,
@@ -51,6 +54,31 @@ class ReaderViewModel(
                 onResult("删除书签失败：${e.message.orEmpty()}")
             }
         }
+    }
+
+    /** Creates a highlight for the selected [locator]; returned right away so the menu can keep editing it */
+    fun createHighlight(bookId: String, locator: Locator, kind: HighlightKind, color: Int): Highlight {
+        val highlight = Highlight(
+            id = UUID.randomUUID().toString(),
+            locator = locator.toJSON().toString(),
+            // Paragraph breaks in the selection become a space so the notes list stays compact
+            text = locator.text.highlight.orEmpty().trim().replace(Regex("\\s+"), " "),
+            kind = kind,
+            color = color,
+            chapter = locator.title,
+            progress = locator.locations.totalProgression ?: 0.0,
+            createdAt = System.currentTimeMillis(),
+        )
+        saveHighlight(bookId, highlight)
+        return highlight
+    }
+
+    fun saveHighlight(bookId: String, highlight: Highlight) {
+        viewModelScope.launch { runCatching { books.saveHighlight(bookId, highlight) } }
+    }
+
+    fun removeHighlight(bookId: String, highlightId: String) {
+        viewModelScope.launch { books.removeHighlight(bookId, highlightId) }
     }
 
     fun saveProgress(bookId: String, locator: Locator) {
