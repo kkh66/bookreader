@@ -44,6 +44,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.ViewCompositionStrategy
@@ -77,6 +78,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import org.json.JSONObject
+import org.readium.r2.navigator.Decoration
 import org.readium.r2.navigator.epub.EpubNavigatorFragment
 import org.readium.r2.navigator.epub.EpubPreferences
 import org.readium.r2.navigator.input.InputListener
@@ -378,6 +380,9 @@ private fun ReaderHeader(title: String, topInset: Dp, onBack: () -> Unit) {
 
 private const val SEEK_SETTLE_MS = 500L
 
+/** Decoration group for the in-page highlight of the last opened search hit */
+private const val SEARCH_GROUP = "search"
+
 // Page colors: the dark page matches the app's dark background so it blends with the menus;
 // dark text is slightly dimmed to cut glare
 private val DARK_PAGE = 0xFF0E0E0F.toInt()
@@ -394,7 +399,7 @@ private fun readerPreferences(dark: Boolean) = EpubPreferences(
     textColor = ReadiumColor(if (dark) DARK_TEXT else LIGHT_TEXT),
 )
 
-/** Bottom menu: previous chapter / whole-book progress slider / next chapter, with contents, bookmarks and reading settings below */
+/** Bottom menu: previous chapter / whole-book progress slider / next chapter, with contents, bookmarks, search and reading settings below */
 @Composable
 private fun ReaderControls(
     book: Book,
@@ -409,6 +414,8 @@ private fun ReaderControls(
 ) {
     var showingNavigation by rememberSaveable { mutableStateOf(false) }
     var showingSettings by rememberSaveable { mutableStateOf(false) }
+    var showingSearch by rememberSaveable { mutableStateOf(false) }
+    val search = remember(publication) { ReaderSearchState() }
     val locationId = bookmarkId(locator.href.toString(), locator.locations.position, locator.locations.progression)
     val bookmarked = book.bookmarks.any { it.id == locationId }
     val scope = rememberCoroutineScope()
@@ -481,12 +488,38 @@ private fun ReaderControls(
                         if (bookmarked) "移除当前书签" else "添加书签",
                     )
                 }
+                IconButton(onClick = { showingSearch = true }) { Icon(AppIcons.Search, "搜索") }
                 IconButton(onClick = { showingSettings = true }) { Icon(AppIcons.Settings, "阅读设置") }
             }
         }
     }
     if (showingSettings) {
         ReaderSettingsDialog(settings, onDismiss = { showingSettings = false })
+    }
+    if (showingSearch) {
+        ReaderSearchDialog(
+            state = search,
+            onSearch = {
+                // A new search drops the previous hit's highlight from the page
+                scope.launch { navigator.applyDecorations(emptyList(), SEARCH_GROUP) }
+                search.run(scope, publication)
+            },
+            onOpen = { hit ->
+                if (navigator.go(hit)) {
+                    showingSearch = false
+                    // Mark the hit on the page so it's easy to spot after the jump
+                    scope.launch {
+                        navigator.applyDecorations(
+                            listOf(Decoration("search", hit, Decoration.Style.Highlight(tint = SEARCH_HIGHLIGHT.toArgb()))),
+                            SEARCH_GROUP,
+                        )
+                    }
+                } else {
+                    onMessage("无法跳转到此位置")
+                }
+            },
+            onDismiss = { showingSearch = false },
+        )
     }
     if (showingNavigation) {
         ReaderNavigation(
