@@ -1,6 +1,7 @@
 package com.bookreader.app.ui.opds
 
 import android.graphics.Bitmap
+import android.os.SystemClock
 import android.util.LruCache
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider.AndroidViewModelFactory.Companion.APPLICATION_KEY
@@ -13,11 +14,14 @@ import com.bookreader.app.data.LibraryRepository
 import com.bookreader.app.data.OpdsLibrary
 import com.bookreader.app.data.opds.OpdsEntry
 import com.bookreader.app.data.opds.OpdsRepository
+import com.bookreader.app.reader.ReaderRepository
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -43,6 +47,7 @@ class OpdsViewModel(
     private val libraries: LibraryRepository,
     private val opds: OpdsRepository,
     private val books: BookRepository,
+    private val reader: ReaderRepository,
 ) : ViewModel() {
 
     private data class Level(val url: String, val title: String)
@@ -106,6 +111,36 @@ class OpdsViewModel(
         }
     }
 
+    /** One-off event to open the reader, sent only after the Publication opened */
+    private val _openReader = Channel<String>(Channel.BUFFERED)
+    val openReader = _openReader.receiveAsFlow()
+
+    // Same guard as the shelf: a double tap would open two readers, and the second closes the first one's Publication
+    private var opening = false
+    private var lastOpenAt = 0L
+
+    /** A downloaded book: open the shelf copy in the reader */
+    fun read(epub: OpdsEntry.Epub) {
+        val book = books.books.value.firstOrNull { it.source == epub.downloadUrl } ?: return
+        val now = SystemClock.elapsedRealtime()
+        if (opening || now - lastOpenAt < OPEN_DEBOUNCE_MS) return
+        opening = true
+        lastOpenAt = now
+        viewModelScope.launch {
+            try {
+                reader.open(book)
+                _openReader.send(book.id)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                _state.update { it.copy(message = "打开失败：${e.message ?: e}") }
+            } finally {
+                opening = false
+                lastOpenAt = SystemClock.elapsedRealtime()
+            }
+        }
+    }
+
     fun clearMessage() = _state.update { it.copy(message = null) }
 
     fun select(epub: OpdsEntry.Epub) = _state.update { it.copy(selected = epub) }
@@ -154,10 +189,12 @@ class OpdsViewModel(
     }
 
     companion object {
+        private const val OPEN_DEBOUNCE_MS = 1000L
+
         val Factory = viewModelFactory {
             initializer {
                 val container = this[APPLICATION_KEY]!!.container
-                OpdsViewModel(container.libraries, container.opds, container.books)
+                OpdsViewModel(container.libraries, container.opds, container.books, container.reader)
             }
         }
     }

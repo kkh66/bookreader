@@ -16,6 +16,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.bookreader.app.ui.components.Gap
@@ -53,6 +54,7 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.bookreader.app.data.opds.OpdsEntry
+import com.bookreader.app.reader.ReaderActivity
 import com.bookreader.app.ui.components.BackHeader
 import com.bookreader.app.ui.components.COVER_RATIO
 import com.bookreader.app.ui.components.CircleIconButton
@@ -70,10 +72,14 @@ fun OpdsScreen(
     viewModel: OpdsViewModel = viewModel(factory = OpdsViewModel.Factory),
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
+    val context = LocalContext.current
     val snackbar = remember { SnackbarHostState() }
     val goBack = { if (!viewModel.back()) onExit() }
 
     LaunchedEffect(libraryId, startUrl) { viewModel.start(libraryId, startUrl, startTitle) }
+    LaunchedEffect(Unit) {
+        viewModel.openReader.collect { context.startActivity(ReaderActivity.intent(context, it)) }
+    }
     LaunchedEffect(state.message) {
         state.message?.let {
             snackbar.showSnackbar(it)
@@ -102,14 +108,18 @@ fun OpdsScreen(
                             showDivider = !last,
                             onClick = { viewModel.open(entry.url, entry.title) },
                         )
-                        is OpdsEntry.Epub -> EpubRow(
-                            entry,
-                            status = state.statusOf(entry),
-                            showDivider = !last,
-                            loadCover = { viewModel.cover(it, large = false) },
-                            onClick = { viewModel.select(entry) },
-                            onDownload = { viewModel.download(entry) },
-                        )
+                        is OpdsEntry.Epub -> {
+                            val status = state.statusOf(entry)
+                            EpubRow(
+                                entry,
+                                status = status,
+                                showDivider = !last,
+                                loadCover = { viewModel.cover(it, large = false) },
+                                // Already on the shelf: go straight to reading instead of the details dialog
+                                onClick = { if (status == DownloadStatus.Done) viewModel.read(entry) else viewModel.select(entry) },
+                                onDownload = { viewModel.download(entry) },
+                            )
+                        }
                     }
                 }
                 state.nextUrl?.let { next ->
@@ -133,6 +143,10 @@ fun OpdsScreen(
             status = state.statusOf(entry),
             loadCover = { viewModel.cover(it, large = true) },
             onDownload = { viewModel.download(entry) },
+            onRead = {
+                viewModel.dismissDetail()
+                viewModel.read(entry)
+            },
             onDismiss = viewModel::dismissDetail,
         )
     }
@@ -146,7 +160,7 @@ private fun OpdsUiState.statusOf(entry: OpdsEntry.Epub) = when (entry.downloadUr
     else -> DownloadStatus.None
 }
 
-/** Book row: tap the row for details, tap the icon on the right to download directly */
+/** Book row: tap for details (or to read once downloaded); the icon on the right downloads directly, or reads once downloaded */
 @Composable
 private fun EpubRow(
     entry: OpdsEntry.Epub,
@@ -174,8 +188,12 @@ private fun EpubRow(
             }
             when (status) {
                 DownloadStatus.Running -> CircularProgressIndicator(Modifier.size(22.dp), strokeWidth = 2.dp)
-                DownloadStatus.Done -> Icon(
-                    AppIcons.Check, "已在书架", Modifier.size(22.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                DownloadStatus.Done -> Text(
+                    "阅读",
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier.clip(CircleShape).background(MaterialTheme.colorScheme.surfaceVariant)
+                        .clickable(onClick = onClick).padding(horizontal = Space.M, vertical = Space.XS),
                 )
                 DownloadStatus.None -> Icon(
                     AppIcons.Download, "下载",
@@ -200,6 +218,7 @@ private fun BookDetailDialog(
     status: DownloadStatus,
     loadCover: suspend (String) -> Bitmap?,
     onDownload: () -> Unit,
+    onRead: () -> Unit,
     onDismiss: () -> Unit,
 ) {
     val secondary = MaterialTheme.colorScheme.onSurfaceVariant
@@ -255,9 +274,10 @@ private fun BookDetailDialog(
             Gap(Space.XL)
             Row(horizontalArrangement = Arrangement.spacedBy(Space.M)) {
                 OutlinedButton(onClick = onDismiss, shape = CircleShape, modifier = Modifier.weight(1f)) { Text("关闭") }
+                // Becomes 开始阅读 as soon as the download finishes, so the book can be opened right from here
                 Button(
-                    onClick = onDownload,
-                    enabled = status == DownloadStatus.None,
+                    onClick = if (status == DownloadStatus.Done) onRead else onDownload,
+                    enabled = status != DownloadStatus.Running,
                     shape = CircleShape,
                     modifier = Modifier.weight(1f),
                 ) {
@@ -265,7 +285,7 @@ private fun BookDetailDialog(
                         when (status) {
                             DownloadStatus.None -> "下载到书架"
                             DownloadStatus.Running -> "下载中…"
-                            DownloadStatus.Done -> "已在书架"
+                            DownloadStatus.Done -> "开始阅读"
                         }
                     )
                 }
