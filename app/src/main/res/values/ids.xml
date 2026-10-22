@@ -3,4 +3,5 @@
     <item name="reader_container" type="id" />
     <item name="reader_controls" type="id" />
     <item name="reader_bottom_controls" type="id" />
+    <item name="reader_footer" type="id" />
 </resources>

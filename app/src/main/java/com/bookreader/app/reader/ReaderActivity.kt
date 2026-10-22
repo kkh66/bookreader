@@ -2,6 +2,7 @@ package com.bookreader.app.reader
 
 import android.content.Context
 import android.content.Intent
+import android.content.res.Configuration
 import android.graphics.Color.TRANSPARENT
 import android.net.Uri
 import android.os.Bundle
@@ -17,7 +18,6 @@ import androidx.activity.SystemBarStyle
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
 import androidx.appcompat.app.AppCompatActivity
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -43,6 +43,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.ViewCompositionStrategy
@@ -71,19 +72,24 @@ import com.bookreader.app.ui.components.Space
 import com.bookreader.app.ui.shelf.ShelfFormat
 import com.bookreader.app.ui.theme.AppIcons
 import com.bookreader.app.ui.theme.BookReaderTheme
+import com.bookreader.app.ui.theme.isDark
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import org.json.JSONObject
 import org.readium.r2.navigator.epub.EpubNavigatorFragment
+import org.readium.r2.navigator.epub.EpubPreferences
 import org.readium.r2.navigator.input.InputListener
 import org.readium.r2.navigator.input.TapEvent
+import org.readium.r2.navigator.preferences.Theme
+import org.readium.r2.navigator.preferences.Color as ReadiumColor
 import org.readium.r2.navigator.util.DirectionalNavigationAdapter
 import org.readium.r2.shared.ExperimentalReadiumApi
 import org.readium.r2.shared.publication.Locator
 import org.readium.r2.shared.publication.Publication
 import org.readium.r2.shared.publication.services.locateProgression
 import org.readium.r2.shared.util.AbsoluteUrl
+import kotlin.math.roundToInt
 
 /**
  * Reader screen: hosts Readium's EpubNavigatorFragment; it only displays the book and reports progress to the ViewModel
@@ -111,8 +117,11 @@ class ReaderActivity : AppCompatActivity(), EpubNavigatorFragment.Listener {
             return
         }
         // Must be set before super.onCreate; fragment restoration needs it
+        // Page colors are passed up front so a dark page never flashes white while loading
+        val dark = isDark(container.settings.themeMode.value)
         supportFragmentManager.fragmentFactory = session.navigatorFactory.createFragmentFactory(
             initialLocator = session.initialLocator,
+            initialPreferences = readerPreferences(dark),
             listener = this,
         )
         super.onCreate(savedInstanceState)
@@ -130,9 +139,19 @@ class ReaderActivity : AppCompatActivity(), EpubNavigatorFragment.Listener {
             visibility = if (controlsVisible) View.VISIBLE else View.GONE
             setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed)
         }
-        val readerContainer = FragmentContainerView(this).apply { id = R.id.reader_container }
+        val readerContainer = FragmentContainerView(this).apply {
+            id = R.id.reader_container
+            setBackgroundColor(pageBackground(dark))
+        }
+        val footer = ComposeView(this).apply {
+            id = R.id.reader_footer
+            setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed)
+        }
+        // The page stops above the status line; the menus still overlay both
+        val footerHeight = (FOOTER_HEIGHT.value * resources.displayMetrics.density).roundToInt()
         val content = FrameLayout(this).apply {
-            addView(readerContainer, FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT))
+            addView(readerContainer, FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT).apply { bottomMargin = footerHeight })
+            addView(footer, FrameLayout.LayoutParams(MATCH_PARENT, footerHeight, Gravity.BOTTOM))
             addView(controls, FrameLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT, Gravity.TOP))
             addView(bottomControls, FrameLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT, Gravity.BOTTOM))
         }
@@ -171,6 +190,17 @@ class ReaderActivity : AppCompatActivity(), EpubNavigatorFragment.Listener {
             }
         })
 
+        footer.setContent {
+            val locator by navigator.currentLocator.collectAsStateWithLifecycle()
+            val mode by container.settings.themeMode.collectAsStateWithLifecycle()
+            val night = mode.isDark()
+            ReaderFooter(
+                publication = session.publication,
+                locator = locator,
+                background = Color(pageBackground(night)),
+                contentColor = Color(if (night) DARK_TEXT else LIGHT_TEXT).copy(alpha = 0.55f),
+            )
+        }
         controls.setContent {
             val topInset = with(LocalDensity.current) { headerInset.intValue.toDp() }
             ReaderTheme {
@@ -204,6 +234,14 @@ class ReaderActivity : AppCompatActivity(), EpubNavigatorFragment.Listener {
         lifecycleScope.launch {
             repeatOnLifecycle(Lifecycle.State.STARTED) {
                 launch { navigator.currentLocator.collect { viewModel.saveProgress(bookId, it) } }
+                // Switching appearance (Me tab or the day/night button) recolors the page right away
+                launch {
+                    container.settings.themeMode.collect { mode ->
+                        val night = isDark(mode)
+                        readerContainer.setBackgroundColor(pageBackground(night))
+                        navigator.submitPreferences(readerPreferences(night))
+                    }
+                }
                 // Toggling "hide status bar" in settings takes effect immediately
                 container.settings.readerHideStatusBar.state.collect { hide ->
                     hideStatusBar = hide
@@ -249,14 +287,18 @@ class ReaderActivity : AppCompatActivity(), EpubNavigatorFragment.Listener {
         }
     }
 
+    /** Same rule as [ThemeMode.isDark], for use outside Compose (System follows the device night mode) */
+    private fun isDark(mode: ThemeMode) = when (mode) {
+        ThemeMode.System ->
+            (resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES
+        ThemeMode.Light -> false
+        ThemeMode.Dark -> true
+    }
+
     @Composable
     private fun ReaderTheme(content: @Composable () -> Unit) {
         val mode by container.settings.themeMode.collectAsStateWithLifecycle()
-        val dark = when (mode) {
-            ThemeMode.System -> isSystemInDarkTheme()
-            ThemeMode.Light -> false
-            ThemeMode.Dark -> true
-        }
+        val dark = mode.isDark()
         LaunchedEffect(dark) {
             val style = if (dark) SystemBarStyle.dark(TRANSPARENT) else SystemBarStyle.light(TRANSPARENT, TRANSPARENT)
             enableEdgeToEdge(statusBarStyle = style, navigationBarStyle = style)
@@ -335,6 +377,22 @@ private fun ReaderHeader(title: String, topInset: Dp, onBack: () -> Unit) {
 }
 
 private const val SEEK_SETTLE_MS = 500L
+
+// Page colors: the dark page matches the app's dark background so it blends with the menus;
+// dark text is slightly dimmed to cut glare
+private val DARK_PAGE = 0xFF0E0E0F.toInt()
+private val DARK_TEXT = 0xFFDADADA.toInt()
+private val LIGHT_PAGE = 0xFFFFFFFF.toInt()
+private val LIGHT_TEXT = 0xFF141414.toInt()
+
+private fun pageBackground(dark: Boolean) = if (dark) DARK_PAGE else LIGHT_PAGE
+
+/** EPUB page appearance for the current light / dark mode */
+private fun readerPreferences(dark: Boolean) = EpubPreferences(
+    theme = if (dark) Theme.DARK else Theme.LIGHT,
+    backgroundColor = ReadiumColor(pageBackground(dark)),
+    textColor = ReadiumColor(if (dark) DARK_TEXT else LIGHT_TEXT),
+)
 
 /** Bottom menu: previous chapter / whole-book progress slider / next chapter, with contents, bookmarks and reading settings below */
 @Composable
