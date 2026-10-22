@@ -39,6 +39,7 @@ import com.bookreader.app.ui.theme.AppIcons
 fun MeScreen(
     onOpenLibraries: () -> Unit,
     onOpenStats: () -> Unit,
+    onOpenReadingStyle: () -> Unit,
     viewModel: MeViewModel = viewModel(factory = MeViewModel.Factory),
 ) {
     val themeMode by viewModel.themeMode.collectAsStateWithLifecycle()
@@ -51,6 +52,7 @@ fun MeScreen(
             SectionTitle("阅读", Modifier.padding(start = Space.XS, bottom = Space.M))
             SurfaceCard {
                 SettingRow(AppIcons.Contrast, "外观", value = themeMode.label, onClick = { choosingTheme = true })
+                SettingRow(AppIcons.FontSize, "阅读样式", onClick = onOpenReadingStyle)
                 SettingRow(AppIcons.History, "阅读记录", onClick = onOpenStats, showDivider = false)
             }
             Gap(Space.XL)

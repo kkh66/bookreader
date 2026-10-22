@@ -66,8 +66,10 @@ import com.bookreader.app.container
 import com.bookreader.app.R
 import com.bookreader.app.data.Book
 import com.bookreader.app.data.Bookmark
+import com.bookreader.app.data.ReadingStyle
 import com.bookreader.app.data.SettingsRepository
 import com.bookreader.app.data.ThemeMode
+import com.bookreader.app.data.UserFont
 import com.bookreader.app.data.bookmarkId
 import com.bookreader.app.ui.components.Space
 import com.bookreader.app.ui.shelf.ShelfFormat
@@ -76,6 +78,7 @@ import com.bookreader.app.ui.theme.BookReaderTheme
 import com.bookreader.app.ui.theme.isDark
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.launch
 import org.json.JSONObject
 import org.readium.r2.navigator.Decoration
@@ -85,6 +88,7 @@ import org.readium.r2.navigator.input.InputListener
 import org.readium.r2.navigator.input.TapEvent
 import org.readium.r2.navigator.preferences.Theme
 import org.readium.r2.navigator.preferences.Color as ReadiumColor
+import org.readium.r2.navigator.preferences.FontFamily
 import org.readium.r2.navigator.util.DirectionalNavigationAdapter
 import org.readium.r2.shared.ExperimentalReadiumApi
 import org.readium.r2.shared.publication.Locator
@@ -119,12 +123,20 @@ class ReaderActivity : AppCompatActivity(), EpubNavigatorFragment.Listener {
             return
         }
         // Must be set before super.onCreate; fragment restoration needs it
-        // Page colors are passed up front so a dark page never flashes white while loading
+        // Page colors and text style are passed up front so the first page never flashes in the wrong style
         val dark = isDark(container.settings.themeMode.value)
         supportFragmentManager.fragmentFactory = session.navigatorFactory.createFragmentFactory(
             initialLocator = session.initialLocator,
-            initialPreferences = readerPreferences(dark),
+            initialPreferences = readerPreferences(dark, container.settings.readingStyle.value),
             listener = this,
+            configuration = EpubNavigatorFragment.Configuration {
+                // Imported fonts, each served as a resource of the publication (see ReaderRepository)
+                session.fonts.forEach { served ->
+                    addFontFamilyDeclaration(FontFamily(served.font.family)) {
+                        addFontFace { addSource(served.url) }
+                    }
+                }
+            },
         )
         super.onCreate(savedInstanceState)
         title = session.book.title
@@ -229,6 +241,7 @@ class ReaderActivity : AppCompatActivity(), EpubNavigatorFragment.Listener {
                     },
                     onRemove = { viewModel.removeBookmark(bookId, it.id, ::showMessage) },
                     settings = container.settings,
+                    fonts = session.fonts.map { it.font },
                 )
             }
         }
@@ -236,12 +249,12 @@ class ReaderActivity : AppCompatActivity(), EpubNavigatorFragment.Listener {
         lifecycleScope.launch {
             repeatOnLifecycle(Lifecycle.State.STARTED) {
                 launch { navigator.currentLocator.collect { viewModel.saveProgress(bookId, it) } }
-                // Switching appearance (Me tab or the day/night button) recolors the page right away
+                // Appearance (Me tab) and text style (reading settings) apply to the page right away
                 launch {
-                    container.settings.themeMode.collect { mode ->
+                    combine(container.settings.themeMode, container.settings.readingStyle, ::Pair).collect { (mode, style) ->
                         val night = isDark(mode)
                         readerContainer.setBackgroundColor(pageBackground(night))
-                        navigator.submitPreferences(readerPreferences(night))
+                        navigator.submitPreferences(readerPreferences(night, style))
                     }
                 }
                 // Toggling "hide status bar" in settings takes effect immediately
@@ -392,11 +405,18 @@ private val LIGHT_TEXT = 0xFF141414.toInt()
 
 private fun pageBackground(dark: Boolean) = if (dark) DARK_PAGE else LIGHT_PAGE
 
-/** EPUB page appearance for the current light / dark mode */
-private fun readerPreferences(dark: Boolean) = EpubPreferences(
+/** EPUB page appearance: light / dark colors plus the user's text style */
+private fun readerPreferences(dark: Boolean, style: ReadingStyle) = EpubPreferences(
     theme = if (dark) Theme.DARK else Theme.LIGHT,
     backgroundColor = ReadiumColor(pageBackground(dark)),
     textColor = ReadiumColor(if (dark) DARK_TEXT else LIGHT_TEXT),
+    fontFamily = style.fontFamily?.let(::FontFamily),
+    fontSize = style.fontSize,
+    fontWeight = style.fontWeight,
+    lineHeight = style.lineHeight,
+    paragraphSpacing = style.paragraphSpacing,
+    pageMargins = style.pageMargins,
+    publisherStyles = !style.overridesPublisherStyles,
 )
 
 /** Bottom menu: previous chapter / whole-book progress slider / next chapter, with contents, bookmarks, search and reading settings below */
@@ -411,6 +431,7 @@ private fun ReaderControls(
     onOpen: (Bookmark) -> Boolean,
     onRemove: (Bookmark) -> Unit,
     settings: SettingsRepository,
+    fonts: List<UserFont>,
 ) {
     var showingNavigation by rememberSaveable { mutableStateOf(false) }
     var showingSettings by rememberSaveable { mutableStateOf(false) }
@@ -494,7 +515,7 @@ private fun ReaderControls(
         }
     }
     if (showingSettings) {
-        ReaderSettingsDialog(settings, onDismiss = { showingSettings = false })
+        ReaderSettingsDialog(settings, fonts, onDismiss = { showingSettings = false })
     }
     if (showingSearch) {
         ReaderSearchDialog(

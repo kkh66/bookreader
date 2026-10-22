@@ -56,6 +56,7 @@ import com.bookreader.app.data.opds.OpdsParser
 import com.bookreader.app.ui.components.Space
 import com.bookreader.app.ui.discover.DiscoverScreen
 import com.bookreader.app.ui.me.MeScreen
+import com.bookreader.app.ui.me.ReadingStyleScreen
 import com.bookreader.app.ui.opds.OpdsScreen
 import com.bookreader.app.ui.library.LibraryEditScreen
 import com.bookreader.app.ui.library.LibraryScreen
@@ -123,6 +124,7 @@ private fun AppRoot() {
     var browseTitle by rememberSaveable { mutableStateOf("") }
     var editLibrary by rememberSaveable { mutableStateOf<String?>(null) }
     var libraryRevision by rememberSaveable { mutableStateOf(0) }
+    var readingStyle by rememberSaveable { mutableStateOf(false) }
     val shelfViewModel: ShelfViewModel = viewModel(factory = ShelfViewModel.Factory)
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         uri?.let {
@@ -154,6 +156,7 @@ private fun AppRoot() {
                 revision = libraryRevision,
             )
         }
+        readingStyle -> Box(overlay) { ReadingStyleScreen(onExit = { readingStyle = false }) }
         else -> {
             BackHandler(enabled = tab != Tab.Shelf) { tab = Tab.Shelf }
             Scaffold(
@@ -171,7 +174,11 @@ private fun AppRoot() {
                             onImportEpub = importEpub,
                         )
                         Tab.Stats -> StatsScreen()
-                        Tab.Me -> MeScreen(onOpenLibraries = { tab = Tab.Discover }, onOpenStats = { tab = Tab.Stats })
+                        Tab.Me -> MeScreen(
+                            onOpenLibraries = { tab = Tab.Discover },
+                            onOpenStats = { tab = Tab.Stats },
+                            onOpenReadingStyle = { readingStyle = true },
+                        )
                     }
                     }
                 }

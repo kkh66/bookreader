@@ -1,10 +1,16 @@
 package com.bookreader.app.reader
 
 import android.content.Context
+import org.readium.r2.shared.publication.Link
 import org.readium.r2.shared.publication.Publication
+import org.readium.r2.shared.util.Url
 import org.readium.r2.shared.util.asset.AssetRetriever
+import org.readium.r2.shared.util.data.Container
+import org.readium.r2.shared.util.file.FileResource
 import org.readium.r2.shared.util.getOrElse
 import org.readium.r2.shared.util.http.DefaultHttpClient
+import org.readium.r2.shared.util.mediatype.MediaType
+import org.readium.r2.shared.util.resource.Resource
 import org.readium.r2.streamer.PublicationOpener
 import org.readium.r2.streamer.parser.DefaultPublicationParser
 import java.io.File
@@ -21,13 +27,44 @@ class Readium(context: Context) {
         DefaultPublicationParser(context, httpClient, assetRetriever, pdfFactory = null)
     )
 
-    suspend fun open(file: File): Publication {
+    /** [fonts] are added to the publication as extra resources so the reader's stylesheet can load them */
+    suspend fun open(file: File, fonts: List<FontFile> = emptyList()): Publication {
         val asset = assetRetriever.retrieve(file)
             .getOrElse { throw IOException("无法读取文件: ${it.message}") }
-        return opener.open(asset, allowUserInteraction = false)
+        return opener.open(asset, allowUserInteraction = false, onCreatePublication = { addFonts(fonts) })
             .getOrElse {
                 asset.close()
                 throw IOException("无法解析 EPUB: ${it.message}")
             }
     }
+}
+
+/** A font file served inside the publication at [href] */
+class FontFile(val href: Url, val file: File) {
+    val mediaType: MediaType = when (file.extension) {
+        "otf" -> MediaType.OTF
+        "woff" -> MediaType.WOFF
+        "woff2" -> MediaType("font/woff2")!!
+        else -> MediaType.TTF
+    }
+}
+
+/**
+ * The reader only loads fonts from the app's assets or from the publication itself,
+ * so imported fonts are listed as publication resources and read from their files
+ */
+private fun Publication.Builder.addFonts(fonts: List<FontFile>) {
+    if (fonts.isEmpty()) return
+    manifest = manifest.copy(resources = manifest.resources + fonts.map { Link(it.href, mediaType = it.mediaType) })
+    container = FontContainer(container, fonts.associate { it.href to it.file })
+}
+
+private class FontContainer(
+    private val base: Container<Resource>,
+    private val fonts: Map<Url, File>,
+) : Container<Resource> {
+    override val sourceUrl get() = base.sourceUrl
+    override val entries: Set<Url> = base.entries + fonts.keys
+    override fun get(url: Url): Resource? = fonts[url]?.let { FileResource(it) } ?: base[url]
+    override fun close() = base.close()
 }

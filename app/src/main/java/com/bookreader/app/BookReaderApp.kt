@@ -3,6 +3,7 @@ package com.bookreader.app
 import android.app.Application
 import android.content.Context
 import com.bookreader.app.data.BookRepository
+import com.bookreader.app.data.FontRepository
 import com.bookreader.app.data.LibraryRepository
 import com.bookreader.app.data.SettingsRepository
 import com.bookreader.app.data.StatsRepository
@@ -33,7 +34,8 @@ class AppContainer(context: Context) {
     val stats = StatsRepository(File(context.filesDir, "stats.json"))
     val libraries = LibraryRepository(File(context.filesDir, "libraries.json"), settings)
     val opds = OpdsRepository(OkHttpClient())
-    val reader = ReaderRepository(readium, books)
+    val fonts = FontRepository(File(context.filesDir, "fonts"))
+    val reader = ReaderRepository(readium, books, fonts)
 }
 
 val Context.container: AppContainer

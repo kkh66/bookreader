@@ -4,6 +4,7 @@ import android.content.Context
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.serialization.json.Json
 
 enum class ThemeMode(val label: String) {
     System("跟随系统"),
@@ -12,12 +13,13 @@ enum class ThemeMode(val label: String) {
 }
 
 /**
- * App settings (appearance, library layout, reading toggles), stored in app-private SharedPreferences
+ * App settings (appearance, library layout, reading style and toggles), stored in app-private SharedPreferences
  * The library list lives in [LibraryRepository]
  */
 class SettingsRepository(context: Context) {
 
     private val prefs = context.getSharedPreferences("settings", Context.MODE_PRIVATE)
+    private val json = Json { ignoreUnknownKeys = true }
 
     private val _themeMode = MutableStateFlow(
         ThemeMode.entries.firstOrNull { it.name == prefs.getString(KEY_THEME, null) } ?: ThemeMode.System
@@ -45,6 +47,19 @@ class SettingsRepository(context: Context) {
     fun setLibraryGrid(grid: Boolean) {
         prefs.edit().putBoolean(KEY_LIBRARY_GRID, grid).apply()
         _libraryGrid.value = grid
+    }
+
+    /** EPUB text layout: font, size and spacing */
+    private val _readingStyle = MutableStateFlow(
+        prefs.getString(KEY_READING_STYLE, null)
+            ?.let { runCatching { json.decodeFromString<ReadingStyle>(it) }.getOrNull() }
+            ?: ReadingStyle()
+    )
+    val readingStyle: StateFlow<ReadingStyle> = _readingStyle.asStateFlow()
+
+    fun setReadingStyle(style: ReadingStyle) {
+        prefs.edit().putString(KEY_READING_STYLE, json.encodeToString(style)).apply()
+        _readingStyle.value = style
     }
 
     /** Toggle setting: stored in prefs and exposed as a StateFlow for the UI to observe */
@@ -85,5 +100,6 @@ class SettingsRepository(context: Context) {
         const val KEY_THEME = "theme_mode"
         const val KEY_LIBRARY_GRID = "library_grid"
         const val KEY_SHELF_GRID = "shelf_grid"
+        const val KEY_READING_STYLE = "reading_style"
     }
 }
