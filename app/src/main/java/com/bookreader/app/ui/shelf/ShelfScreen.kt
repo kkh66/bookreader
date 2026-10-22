@@ -79,7 +79,8 @@ fun ShelfScreen(
     val snackbar = remember { SnackbarHostState() }
     val grid by viewModel.grid.collectAsStateWithLifecycle()
     var searching by rememberSaveable { mutableStateOf(false) }
-    var pendingDelete by remember { mutableStateOf<Book?>(null) }
+    /** Books waiting for delete confirmation: one from a long-press, several from group batch management */
+    var pendingDelete by remember { mutableStateOf<List<Book>?>(null) }
     val drag = remember { ShelfDragState() }
     /** Two books dragged together, waiting for a group name */
     var pendingGroup by remember { mutableStateOf<List<String>?>(null) }
@@ -95,7 +96,7 @@ fun ShelfScreen(
     fun drop(book: Book, targetKey: String) {
         when (val target = state.entries.firstOrNull { it.key == targetKey }) {
             is ShelfEntry.Single -> pendingGroup = listOf(target.item.book.id, book.id)
-            is ShelfEntry.Group -> viewModel.addToGroup(book, target.name)
+            is ShelfEntry.Group -> viewModel.addToGroup(listOf(book.id), target.name)
             null -> Unit
         }
     }
@@ -163,7 +164,7 @@ fun ShelfScreen(
                                 .alpha(if (drag.dragging?.book?.id == key) 0.3f else 1f)
                                 .shelfGestures(
                                     onTap = { viewModel.open(item.book) },
-                                    onLongPress = { pendingDelete = item.book },
+                                    onLongPress = { pendingDelete = listOf(item.book) },
                                     onDragStart = { drag.start(item, it, if (grid) null else listCoverWidth) },
                                     onDrag = drag::move,
                                     onDragEnd = { drag.drop()?.let { (dropped, target) -> drop(dropped.book, target) } },
@@ -172,7 +173,7 @@ fun ShelfScreen(
                             if (grid) {
                                 GridBook(item, highlighted, modifier)
                             } else {
-                                ListBook(item, highlighted, modifier) { pendingDelete = item.book }
+                                ListBook(item, highlighted, modifier) { pendingDelete = listOf(item.book) }
                             }
                         }
                         is ShelfEntry.Group -> {
@@ -192,13 +193,21 @@ fun ShelfScreen(
     if (group != null) {
         GroupDialog(
             group,
-            onOpen = viewModel::open,
-            onRemove = { book ->
-                // Removing the last book makes the group disappear
-                if (group.items.size == 1) openGroup = null
-                viewModel.ungroup(listOf(book.id))
+            // Everything on the shelf that isn't already in this group can be added
+            candidates = state.entries.flatMap { entry ->
+                when (entry) {
+                    is ShelfEntry.Single -> listOf(entry.item)
+                    is ShelfEntry.Group -> if (entry.name == group.name) emptyList() else entry.items
+                }
             },
-            onDelete = { book -> pendingDelete = book },
+            onOpen = viewModel::open,
+            onAdd = { ids -> viewModel.addToGroup(ids, group.name) },
+            onRemove = { books ->
+                // Moving every book out makes the group disappear
+                if (books.size == group.items.size) openGroup = null
+                viewModel.ungroup(books.map { it.id })
+            },
+            onDelete = { books -> pendingDelete = books },
             onRename = { name ->
                 viewModel.renameGroup(group.name, name)
                 openGroup = name
@@ -223,16 +232,17 @@ fun ShelfScreen(
         )
     }
 
-    pendingDelete?.let { book ->
+    pendingDelete?.let { books ->
         AlertDialog(
             onDismissRequest = { pendingDelete = null },
-            title = { Text("删除《${book.title}》？") },
+            title = { Text(if (books.size == 1) "删除《${books[0].title}》？" else "删除 ${books.size} 本书？") },
             text = { Text("会同时删除本地文件和阅读进度") },
             confirmButton = {
                 TextButton(onClick = {
-                    // Deleting the last book in a group removes the group, so the dialog closes too
-                    if (group?.items?.singleOrNull()?.book?.id == book.id) openGroup = null
-                    viewModel.delete(book)
+                    // Deleting every book left in the open group removes the group, so its dialog closes too
+                    val ids = books.map { it.id }.toSet()
+                    if (group != null && group.items.all { it.book.id in ids }) openGroup = null
+                    viewModel.delete(books)
                     pendingDelete = null
                 }) { Text("删除") }
             },

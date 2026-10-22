@@ -148,15 +148,15 @@ class ShelfViewModel(
         message.value = "已导入《${book.title}》"
     }
 
-    fun delete(book: Book) = launchBusy { books.remove(book) }
+    fun delete(list: List<Book>) = launchBusy { list.forEach { books.remove(it) } }
 
     /** After dragging one book onto another and naming the group: put both into the new group */
     fun createGroup(ids: List<String>, name: String) = launchCatching { books.setGroup(ids, name.trim()) }
 
-    /** Dropped onto an existing group */
-    fun addToGroup(book: Book, name: String) = launchCatching {
-        books.setGroup(listOf(book.id), name)
-        message.value = "已移入「$name」"
+    /** Dropped onto an existing group, or picked with the group's add tile; books from another group move here */
+    fun addToGroup(ids: List<String>, name: String) = launchCatching {
+        books.setGroup(ids, name)
+        message.value = if (ids.size == 1) "已移入「$name」" else "已将 ${ids.size} 本移入「$name」"
     }
 
     /** Removes books from their group; passing all of a group's books ungroups it */
