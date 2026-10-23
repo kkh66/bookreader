@@ -51,8 +51,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.ImageBitmap
-import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.platform.LocalDensity
@@ -71,24 +69,20 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
-import com.bookreader.app.container
 import com.bookreader.app.R
 import com.bookreader.app.data.Book
 import com.bookreader.app.data.Bookmark
 import com.bookreader.app.data.Highlight
 import com.bookreader.app.data.HighlightKind
 import com.bookreader.app.data.ReadingStyle
-import com.bookreader.app.data.SettingsRepository
 import com.bookreader.app.data.ThemeMode
 import com.bookreader.app.data.UserFont
 import com.bookreader.app.data.bookmarkId
-import com.bookreader.app.data.decodeScaledBitmap
 import com.bookreader.app.ui.components.Space
 import com.bookreader.app.ui.shelf.ShelfFormat
 import com.bookreader.app.ui.theme.AppIcons
 import com.bookreader.app.ui.theme.BookReaderTheme
 import com.bookreader.app.ui.theme.isDark
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
@@ -96,7 +90,6 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 import org.json.JSONObject
 import org.readium.r2.navigator.Decoration
 import org.readium.r2.navigator.DecorableNavigator
@@ -122,7 +115,7 @@ import kotlin.math.roundToInt
 @OptIn(ExperimentalReadiumApi::class)
 class ReaderActivity : AppCompatActivity(), EpubNavigatorFragment.Listener {
 
-    private val viewModel: ReaderViewModel by viewModels { ReaderViewModel.Factory }
+    private val viewModel: ReaderViewModel by viewModels { ReaderViewModel.factory(bookId) }
     private val bookId by lazy { intent.getStringExtra(EXTRA_BOOK_ID).orEmpty() }
     private var controlsVisible = true
 
@@ -138,11 +131,6 @@ class ReaderActivity : AppCompatActivity(), EpubNavigatorFragment.Listener {
     /** Highlight whose note is being edited */
     private val editingNote = mutableStateOf<Highlight?>(null)
 
-    /** Long-pressed illustration shown full screen */
-    private val viewingImage = mutableStateOf<ImageBitmap?>(null)
-
-    /** Search state, shared by the bottom menu and the selection menu's in-book search */
-    private val search = ReaderSearchState()
     private val showingSearch = mutableStateOf(false)
 
     private var selectionWatch: Job? = null
@@ -174,7 +162,7 @@ class ReaderActivity : AppCompatActivity(), EpubNavigatorFragment.Listener {
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
-        val session = container.reader[bookId]
+        val session = viewModel.session
         if (session == null) {
             // After process death the Publication is no longer in memory; go back to the shelf and reopen it
             super.onCreate(null)
@@ -183,10 +171,10 @@ class ReaderActivity : AppCompatActivity(), EpubNavigatorFragment.Listener {
         }
         // Must be set before super.onCreate; fragment restoration needs it
         // Page colors and text style are passed up front so the first page never flashes in the wrong style
-        val dark = isDark(container.settings.themeMode.value)
+        val dark = isDark(viewModel.themeMode.value)
         supportFragmentManager.fragmentFactory = session.navigatorFactory.createFragmentFactory(
             initialLocator = session.initialLocator,
-            initialPreferences = readerPreferences(dark, container.settings.readingStyle.value),
+            initialPreferences = readerPreferences(dark, viewModel.readingStyle.value),
             listener = this,
             configuration = EpubNavigatorFragment.Configuration {
                 decorationTemplates = highlightTemplates()
@@ -238,7 +226,7 @@ class ReaderActivity : AppCompatActivity(), EpubNavigatorFragment.Listener {
             // On top so the menu is never hidden under the reader's bars
             addView(marks, FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT).apply { bottomMargin = footerHeight })
         }
-        hideStatusBar = container.settings.readerHideStatusBar.state.value
+        hideStatusBar = viewModel.hideStatusBar.value
         ViewCompat.setOnApplyWindowInsetsListener(content) { view, insets ->
             // System bar insets are taken as when visible, so showing/hiding the status bar doesn't resize the text area, re-layout or jump pages
             val bars = insets.getInsetsIgnoringVisibility(WindowInsetsCompat.Type.systemBars())
@@ -296,9 +284,9 @@ class ReaderActivity : AppCompatActivity(), EpubNavigatorFragment.Listener {
             }
         })
         marks.setContent {
-            val books by viewModel.bookList.collectAsStateWithLifecycle()
-            val last by container.settings.lastHighlight.collectAsStateWithLifecycle()
-            val highlights = books.firstOrNull { it.id == bookId }?.highlights.orEmpty()
+            val book by viewModel.book.collectAsStateWithLifecycle()
+            val last by viewModel.lastHighlight.collectAsStateWithLifecycle()
+            val highlights = book?.highlights.orEmpty()
             ReaderTheme {
                 markTarget.value?.let { target ->
                     BackHandler(onBack = ::closeMarkMenu)
@@ -312,7 +300,7 @@ class ReaderActivity : AppCompatActivity(), EpubNavigatorFragment.Listener {
                         lastColor = last.second,
                         onStyle = { kind, color -> applyMarkStyle(target, current, kind, color) },
                         onHighlight = {
-                            (target as? MarkTarget.Selection)?.let { viewModel.createHighlight(bookId, it.locator, last.first, last.second) }
+                            (target as? MarkTarget.Selection)?.let { viewModel.createHighlight(it.locator, last.first, last.second) }
                             closeMarkMenu()
                         },
                         onCopy = {
@@ -321,11 +309,11 @@ class ReaderActivity : AppCompatActivity(), EpubNavigatorFragment.Listener {
                         },
                         onNote = {
                             editingNote.value = current
-                                ?: (target as? MarkTarget.Selection)?.let { viewModel.createHighlight(bookId, it.locator, last.first, last.second) }
+                                ?: (target as? MarkTarget.Selection)?.let { viewModel.createHighlight(it.locator, last.first, last.second) }
                             closeMarkMenu()
                         },
                         onDelete = {
-                            current?.let { viewModel.removeHighlight(bookId, it.id) }
+                            current?.let { viewModel.removeHighlight(it.id) }
                             closeMarkMenu()
                         },
                         onDictionary = {
@@ -333,8 +321,8 @@ class ReaderActivity : AppCompatActivity(), EpubNavigatorFragment.Listener {
                             closeMarkMenu()
                         },
                         onSearch = {
-                            search.query = text
-                            search.run(lifecycleScope, session.publication)
+                            viewModel.setSearchQuery(text)
+                            viewModel.search()
                             showingSearch.value = true
                             closeMarkMenu()
                         },
@@ -353,18 +341,19 @@ class ReaderActivity : AppCompatActivity(), EpubNavigatorFragment.Listener {
                     NoteDialog(
                         highlight,
                         onSave = { note ->
-                            viewModel.saveHighlight(bookId, highlight.copy(note = note))
+                            viewModel.saveHighlight(highlight.copy(note = note))
                             editingNote.value = null
                         },
                         onDismiss = { editingNote.value = null },
                     )
                 }
-                viewingImage.value?.let { ImageViewer(it, onDismiss = { viewingImage.value = null }) }
+                val image by viewModel.viewingImage.collectAsStateWithLifecycle()
+                image?.let { ImageViewer(it, onDismiss = viewModel::closeImage) }
             }
         }
         footer.setContent {
             val locator by navigator.currentLocator.collectAsStateWithLifecycle()
-            val mode by container.settings.themeMode.collectAsStateWithLifecycle()
+            val mode by viewModel.themeMode.collectAsStateWithLifecycle()
             val night = mode.isDark()
             ReaderFooter(
                 publication = session.publication,
@@ -380,9 +369,9 @@ class ReaderActivity : AppCompatActivity(), EpubNavigatorFragment.Listener {
             }
         }
         bottomControls.setContent {
-            val books by viewModel.bookList.collectAsStateWithLifecycle()
+            val currentBook by viewModel.book.collectAsStateWithLifecycle()
             val locator by navigator.currentLocator.collectAsStateWithLifecycle()
-            val book = books.firstOrNull { it.id == bookId } ?: session.book
+            val book = currentBook ?: session.book
             ReaderTheme {
                 ReaderControls(
                     book = book,
@@ -390,17 +379,16 @@ class ReaderActivity : AppCompatActivity(), EpubNavigatorFragment.Listener {
                     navigator = navigator,
                     locator = locator,
                     onMessage = ::showMessage,
-                    onToggle = { viewModel.toggleBookmark(bookId, locator, ::showMessage) },
+                    onToggle = { viewModel.toggleBookmark(locator) },
                     onOpen = { bookmark ->
                         val target = runCatching { Locator.fromJSON(JSONObject(bookmark.locator)) }.getOrNull()
                         val opened = target != null && navigator.go(target)
                         if (!opened) showMessage("无法跳转到此书签")
                         opened
                     },
-                    onRemove = { viewModel.removeBookmark(bookId, it.id, ::showMessage) },
-                    settings = container.settings,
+                    onRemove = { viewModel.removeBookmark(it.id) },
+                    viewModel = viewModel,
                     fonts = session.fonts.map { it.font },
-                    search = search,
                     showingSearch = showingSearch,
                     onOpenHighlight = { highlight ->
                         val target = runCatching { Locator.fromJSON(JSONObject(highlight.locator)) }.getOrNull()
@@ -408,20 +396,21 @@ class ReaderActivity : AppCompatActivity(), EpubNavigatorFragment.Listener {
                         if (!opened) showMessage("无法跳转到此笔记")
                         opened
                     },
-                    onRemoveHighlight = { viewModel.removeHighlight(bookId, it.id) },
+                    onRemoveHighlight = { viewModel.removeHighlight(it.id) },
                 )
             }
         }
 
         lifecycleScope.launch {
             repeatOnLifecycle(Lifecycle.State.STARTED) {
-                launch { navigator.currentLocator.collect { viewModel.saveProgress(bookId, it) } }
+                launch { viewModel.messages.collect(::showMessage) }
+                launch { navigator.currentLocator.collect { viewModel.saveProgress(it) } }
                 // Long press on illustrations: the script goes into whichever document is showing (it skips documents that already have it)
                 launch { navigator.currentLocator.collectLatest { navigator.evaluateJavascript(IMAGE_LONG_PRESS_SCRIPT) } }
                 // Saved highlights drawn on the page; Readium only redraws what changed
                 launch {
-                    viewModel.bookList
-                        .map { list -> list.firstOrNull { it.id == bookId }?.highlights.orEmpty() }
+                    viewModel.book
+                        .map { it?.highlights.orEmpty() }
                         .distinctUntilChanged()
                         .collect { highlights ->
                             navigator.applyDecorations(highlights.mapNotNull { it.toDecoration() }, HIGHLIGHT_GROUP)
@@ -429,14 +418,14 @@ class ReaderActivity : AppCompatActivity(), EpubNavigatorFragment.Listener {
                 }
                 // Appearance (Me tab) and text style (reading settings) apply to the page right away
                 launch {
-                    combine(container.settings.themeMode, container.settings.readingStyle, ::Pair).collect { (mode, style) ->
+                    combine(viewModel.themeMode, viewModel.readingStyle, ::Pair).collect { (mode, style) ->
                         val night = isDark(mode)
                         content.setBackgroundColor(pageBackground(night))
                         navigator.submitPreferences(readerPreferences(night, style))
                     }
                 }
                 // Toggling "hide status bar" in settings takes effect immediately
-                container.settings.readerHideStatusBar.state.collect { hide ->
+                viewModel.hideStatusBar.collect { hide ->
                     hideStatusBar = hide
                     ViewCompat.requestApplyInsets(content)
                     updateStatusBar()
@@ -456,7 +445,7 @@ class ReaderActivity : AppCompatActivity(), EpubNavigatorFragment.Listener {
         }
     }
 
-    private fun currentBook() = viewModel.bookList.value.firstOrNull { it.id == bookId }
+    private fun currentBook() = viewModel.book.value
 
     /** Keeps the menu next to the selection while its handles are dragged, and closes it once the selection is gone */
     private fun watchSelection() {
@@ -479,11 +468,11 @@ class ReaderActivity : AppCompatActivity(), EpubNavigatorFragment.Listener {
      * on a fresh selection it creates the highlight, and the menu stays open to keep adjusting it
      */
     private fun applyMarkStyle(target: MarkTarget, current: Highlight?, kind: HighlightKind, color: Int) {
-        container.settings.setLastHighlight(kind, color)
+        viewModel.setLastHighlight(kind, color)
         when {
-            current != null -> viewModel.saveHighlight(bookId, current.copy(kind = kind, color = color))
+            current != null -> viewModel.saveHighlight(current.copy(kind = kind, color = color))
             target is MarkTarget.Selection -> {
-                val created = viewModel.createHighlight(bookId, target.locator, kind, color)
+                val created = viewModel.createHighlight(target.locator, kind, color)
                 selectionWatch?.cancel()
                 markTarget.value = MarkTarget.Existing(created, target.rect)
                 navigator.clearSelection()
@@ -497,19 +486,12 @@ class ReaderActivity : AppCompatActivity(), EpubNavigatorFragment.Listener {
         navigator.clearSelection()
     }
 
-    /** Reads a long-pressed illustration from the book and shows it full screen, decoded at about the screen's size */
+    /** A long-pressed illustration, shown full screen at about the screen's size */
     private fun openImage(src: String) {
-        val url = AbsoluteUrl(src) ?: return
-        val session = container.reader[bookId] ?: return
         window.decorView.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
         closeMarkMenu()
-        lifecycleScope.launch {
-            val screen = resources.displayMetrics
-            val bitmap = withContext(Dispatchers.IO) {
-                session.read(url)?.let { decodeScaledBitmap(it, screen.widthPixels, screen.heightPixels) }
-            }
-            if (bitmap != null) viewingImage.value = bitmap.asImageBitmap() else showMessage("无法打开图片")
-        }
+        val screen = resources.displayMetrics
+        viewModel.openImage(src, screen.widthPixels, screen.heightPixels)
     }
 
     override fun onKeyDown(keyCode: Int, event: KeyEvent): Boolean {
@@ -528,7 +510,7 @@ class ReaderActivity : AppCompatActivity(), EpubNavigatorFragment.Listener {
 
     /** With volume key paging on: volume down = next page (true), volume up = previous page (false); null for other keys or when off */
     private fun volumePageDirection(keyCode: Int): Boolean? {
-        if (!container.settings.volumeKeyPaging.state.value) return null
+        if (!viewModel.volumeKeyPaging.value) return null
         return when (keyCode) {
             KeyEvent.KEYCODE_VOLUME_DOWN -> true
             KeyEvent.KEYCODE_VOLUME_UP -> false
@@ -546,7 +528,7 @@ class ReaderActivity : AppCompatActivity(), EpubNavigatorFragment.Listener {
 
     @Composable
     private fun ReaderTheme(content: @Composable () -> Unit) {
-        val mode by container.settings.themeMode.collectAsStateWithLifecycle()
+        val mode by viewModel.themeMode.collectAsStateWithLifecycle()
         val dark = mode.isDark()
         LaunchedEffect(dark) {
             val style = if (dark) SystemBarStyle.dark(TRANSPARENT) else SystemBarStyle.light(TRANSPARENT, TRANSPARENT)
@@ -577,7 +559,7 @@ class ReaderActivity : AppCompatActivity(), EpubNavigatorFragment.Listener {
     override fun onPause() {
         super.onPause()
         if (resumedAt > 0) {
-            viewModel.addReadingTime(bookId, (SystemClock.elapsedRealtime() - resumedAt) / 1000)
+            viewModel.addReadingTime((SystemClock.elapsedRealtime() - resumedAt) / 1000)
             resumedAt = 0
         }
     }
@@ -588,7 +570,7 @@ class ReaderActivity : AppCompatActivity(), EpubNavigatorFragment.Listener {
 
     override fun onDestroy() {
         super.onDestroy()
-        if (isFinishing) container.reader.close(bookId)
+        if (isFinishing) viewModel.close()
     }
 
     companion object {
@@ -669,9 +651,8 @@ private fun ReaderControls(
     onRemove: (Bookmark) -> Unit,
     onOpenHighlight: (Highlight) -> Boolean,
     onRemoveHighlight: (Highlight) -> Unit,
-    search: ReaderSearchState,
     showingSearch: MutableState<Boolean>,
-    settings: SettingsRepository,
+    viewModel: ReaderViewModel,
     fonts: List<UserFont>,
 ) {
     var showingNavigation by rememberSaveable { mutableStateOf(false) }
@@ -754,15 +735,17 @@ private fun ReaderControls(
         }
     }
     if (showingSettings) {
-        ReaderSettingsDialog(settings, fonts, onDismiss = { showingSettings = false })
+        ReaderSettingsDialog(viewModel, fonts, onDismiss = { showingSettings = false })
     }
     if (showingSearch.value) {
+        val search by viewModel.searchState.collectAsStateWithLifecycle()
         ReaderSearchDialog(
             state = search,
+            onQueryChange = viewModel::setSearchQuery,
             onSearch = {
                 // A new search drops the previous hit's highlight from the page
                 scope.launch { navigator.applyDecorations(emptyList(), SEARCH_GROUP) }
-                search.run(scope, publication)
+                viewModel.search()
             },
             onOpen = { hit ->
                 if (navigator.go(hit)) {
