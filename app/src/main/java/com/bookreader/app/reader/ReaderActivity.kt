@@ -10,6 +10,7 @@ import android.os.Bundle
 import android.os.SystemClock
 import android.view.Gravity
 import android.view.ActionMode
+import android.view.HapticFeedbackConstants
 import android.view.KeyEvent
 import android.view.Menu
 import android.view.MenuItem
@@ -50,6 +51,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.platform.LocalDensity
@@ -79,17 +82,21 @@ import com.bookreader.app.data.SettingsRepository
 import com.bookreader.app.data.ThemeMode
 import com.bookreader.app.data.UserFont
 import com.bookreader.app.data.bookmarkId
+import com.bookreader.app.data.decodeScaledBitmap
 import com.bookreader.app.ui.components.Space
 import com.bookreader.app.ui.shelf.ShelfFormat
 import com.bookreader.app.ui.theme.AppIcons
 import com.bookreader.app.ui.theme.BookReaderTheme
 import com.bookreader.app.ui.theme.isDark
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import org.json.JSONObject
 import org.readium.r2.navigator.Decoration
 import org.readium.r2.navigator.DecorableNavigator
@@ -130,6 +137,9 @@ class ReaderActivity : AppCompatActivity(), EpubNavigatorFragment.Listener {
 
     /** Highlight whose note is being edited */
     private val editingNote = mutableStateOf<Highlight?>(null)
+
+    /** Long-pressed illustration shown full screen */
+    private val viewingImage = mutableStateOf<ImageBitmap?>(null)
 
     /** Search state, shared by the bottom menu and the selection menu's in-book search */
     private val search = ReaderSearchState()
@@ -181,6 +191,7 @@ class ReaderActivity : AppCompatActivity(), EpubNavigatorFragment.Listener {
             configuration = EpubNavigatorFragment.Configuration {
                 decorationTemplates = highlightTemplates()
                 selectionActionModeCallback = selectionCallback
+                registerJavascriptInterface(IMAGE_BRIDGE) { ImageLongPressBridge { src -> runOnUiThread { openImage(src) } } }
                 // Imported fonts, each served as a resource of the publication (see ReaderRepository)
                 session.fonts.forEach { served ->
                     addFontFamilyDeclaration(FontFamily(served.font.family)) {
@@ -348,6 +359,7 @@ class ReaderActivity : AppCompatActivity(), EpubNavigatorFragment.Listener {
                         onDismiss = { editingNote.value = null },
                     )
                 }
+                viewingImage.value?.let { ImageViewer(it, onDismiss = { viewingImage.value = null }) }
             }
         }
         footer.setContent {
@@ -404,6 +416,8 @@ class ReaderActivity : AppCompatActivity(), EpubNavigatorFragment.Listener {
         lifecycleScope.launch {
             repeatOnLifecycle(Lifecycle.State.STARTED) {
                 launch { navigator.currentLocator.collect { viewModel.saveProgress(bookId, it) } }
+                // Long press on illustrations: the script goes into whichever document is showing (it skips documents that already have it)
+                launch { navigator.currentLocator.collectLatest { navigator.evaluateJavascript(IMAGE_LONG_PRESS_SCRIPT) } }
                 // Saved highlights drawn on the page; Readium only redraws what changed
                 launch {
                     viewModel.bookList
@@ -481,6 +495,21 @@ class ReaderActivity : AppCompatActivity(), EpubNavigatorFragment.Listener {
         selectionWatch?.cancel()
         markTarget.value = null
         navigator.clearSelection()
+    }
+
+    /** Reads a long-pressed illustration from the book and shows it full screen, decoded at about the screen's size */
+    private fun openImage(src: String) {
+        val url = AbsoluteUrl(src) ?: return
+        val session = container.reader[bookId] ?: return
+        window.decorView.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
+        closeMarkMenu()
+        lifecycleScope.launch {
+            val screen = resources.displayMetrics
+            val bitmap = withContext(Dispatchers.IO) {
+                session.read(url)?.let { decodeScaledBitmap(it, screen.widthPixels, screen.heightPixels) }
+            }
+            if (bitmap != null) viewingImage.value = bitmap.asImageBitmap() else showMessage("无法打开图片")
+        }
     }
 
     override fun onKeyDown(keyCode: Int, event: KeyEvent): Boolean {

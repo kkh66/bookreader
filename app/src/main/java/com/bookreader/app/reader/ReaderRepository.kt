@@ -10,6 +10,7 @@ import org.readium.r2.shared.publication.Locator
 import org.readium.r2.shared.publication.Publication
 import org.readium.r2.shared.util.AbsoluteUrl
 import org.readium.r2.shared.util.Url
+import org.readium.r2.shared.util.use
 
 /**
  * Books currently open. The Publication must survive Activity recreation, so it lives at app level (as in the Readium test-app's ReaderRepository)
@@ -30,7 +31,15 @@ class ReaderRepository(
         val initialLocator: Locator?,
         /** Imported fonts as of opening; fonts imported later show up the next time the book opens */
         val fonts: List<ServedFont>,
-    )
+        /** Where the reader's pages load the publication's resources from */
+        private val baseUrl: AbsoluteUrl,
+    ) {
+        /** Bytes of the book resource a page loads from [url] (an image, say); null for anything outside the book */
+        suspend fun read(url: AbsoluteUrl): ByteArray? {
+            val href = baseUrl.relativize(url)
+            return publication.get(publication.linkWithHref(href)?.url() ?: href)?.use { it.read().getOrNull() }
+        }
+    }
 
     private val sessions = mutableMapOf<String, Session>()
 
@@ -45,7 +54,7 @@ class ReaderRepository(
         val base = publication.baseUrl ?: PACKAGE_BASE_URL
         val served = userFonts.zip(files) { font, file -> ServedFont(font, base.resolve(file.href)) }
         val locator = book.locator?.let { runCatching { Locator.fromJSON(JSONObject(it)) }.getOrNull() }
-        return Session(book, publication, EpubNavigatorFactory(publication), locator, served)
+        return Session(book, publication, EpubNavigatorFactory(publication), locator, served, base)
             .also { sessions[book.id] = it }
     }
 
