@@ -51,6 +51,7 @@ import com.bookreader.app.data.UserFont
 import com.bookreader.app.ui.components.BackHeader
 import com.bookreader.app.ui.components.Gap
 import com.bookreader.app.ui.components.PagePadding
+import com.bookreader.app.ui.components.ReadingBehaviorControls
 import com.bookreader.app.ui.components.ReadingStyleControls
 import com.bookreader.app.ui.components.SectionTitle
 import com.bookreader.app.ui.components.Space
@@ -105,6 +106,13 @@ fun ReadingStyleScreen(
                     fontSize = 13.sp, color = secondary,
                     modifier = Modifier.padding(start = Space.XS, top = Space.S),
                 )
+                Gap(Space.XL)
+                SectionTitle("阅读行为", Modifier.padding(start = Space.XS, bottom = Space.M))
+                SurfaceCard {
+                    Column(Modifier.padding(horizontal = Space.L, vertical = Space.XS)) {
+                        ReadingBehaviorControls(viewModel.settings)
+                    }
+                }
                 Gap(Space.XL)
                 SectionTitle(
                     "我的字体", Modifier.padding(start = Space.XS, bottom = Space.M),
@@ -171,7 +179,7 @@ fun ReadingStyleScreen(
 }
 
 class ReadingStyleViewModel(
-    private val settings: SettingsRepository,
+    val settings: SettingsRepository,
     private val fontRepository: FontRepository,
     private val resolver: ContentResolver,
 ) : ViewModel() {

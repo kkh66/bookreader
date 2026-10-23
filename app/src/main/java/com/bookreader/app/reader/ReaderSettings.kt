@@ -12,21 +12,23 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Switch
+import androidx.compose.material3.Tab
+import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.ui.graphics.Color
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalView
-import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -37,6 +39,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.bookreader.app.data.SettingsRepository
 import com.bookreader.app.data.UserFont
 import com.bookreader.app.ui.components.Gap
+import com.bookreader.app.ui.components.ReadingBehaviorControls
 import com.bookreader.app.ui.components.ReadingStyleControls
 import com.bookreader.app.ui.components.Space
 
@@ -47,6 +50,7 @@ import com.bookreader.app.ui.components.Space
 @Composable
 internal fun ReaderSettingsDialog(settings: SettingsRepository, fonts: List<UserFont>, onDismiss: () -> Unit) {
     val style by settings.readingStyle.collectAsStateWithLifecycle()
+    var tab by rememberSaveable { mutableIntStateOf(0) }
     Dialog(
         onDismissRequest = onDismiss,
         properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false),
@@ -72,34 +76,26 @@ internal fun ReaderSettingsDialog(settings: SettingsRepository, fonts: List<User
                     Text("阅读设置", fontSize = 18.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
                     TextButton(onClick = onDismiss) { Text("完成") }
                 }
+                // Two tabs: text style (adjusted with the page visible) and reading behavior switches
+                TabRow(
+                    selectedTabIndex = tab,
+                    containerColor = Color.Transparent,
+                    contentColor = MaterialTheme.colorScheme.primary,
+                ) {
+                    listOf("文字", "行为").forEachIndexed { index, label ->
+                        Tab(selected = tab == index, onClick = { tab = index }, text = { Text(label, fontSize = 15.sp) })
+                    }
+                }
                 Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = Space.XL)) {
-                    ReadingStyleControls(style, fonts, onChange = settings::setReadingStyle)
-                    HorizontalDivider(Modifier.padding(vertical = Space.S), color = MaterialTheme.colorScheme.outlineVariant)
-                    ToggleRow(settings.volumeKeyPaging, "音量键翻页", "音量下 = 下一页，音量上 = 上一页")
-                    ToggleRow(settings.openLastOnLaunch, "启动时打开上次阅读", "打开应用直接回到上次读的书")
-                    ToggleRow(settings.readerHideStatusBar, "阅读时隐藏状态栏", "点屏幕中间呼出菜单时再显示")
+                    Gap(Space.S)
+                    if (tab == 0) {
+                        ReadingStyleControls(style, fonts, onChange = settings::setReadingStyle)
+                    } else {
+                        ReadingBehaviorControls(settings)
+                    }
                     Gap(Space.L)
                 }
             }
         }
-    }
-}
-
-/** Toggle row clickable as a whole: title + description + Switch on the right */
-@Composable
-private fun ToggleRow(toggle: SettingsRepository.Toggle, title: String, subtitle: String) {
-    val on by toggle.state.collectAsStateWithLifecycle()
-    Row(
-        Modifier.fillMaxWidth()
-            .toggleable(value = on, onValueChange = toggle::set, role = Role.Switch)
-            .padding(vertical = Space.S),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Column(Modifier.weight(1f).padding(end = Space.M)) {
-            Text(title, fontSize = 16.sp, color = MaterialTheme.colorScheme.onSurface)
-            Text(subtitle, fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        }
-        // The row handles clicks; the Switch is display only
-        Switch(checked = on, onCheckedChange = null)
     }
 }

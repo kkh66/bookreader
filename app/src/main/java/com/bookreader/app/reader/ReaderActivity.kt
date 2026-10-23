@@ -235,8 +235,16 @@ class ReaderActivity : AppCompatActivity(), EpubNavigatorFragment.Listener {
             val statusTop = maxOf(bars.top, cutout.top)
             // With the status bar hidden the text reaches the top edge (avoiding only the cutout); when the menu opens, the status bar overlays the text
             val top = if (hideStatusBar) cutout.top else statusTop
-            view.setPadding(maxOf(bars.left, cutout.left), top, maxOf(bars.right, cutout.right), maxOf(bars.bottom, cutout.bottom))
-            headerInset.intValue = statusTop - top
+            // Only the page layers are pushed down; the header is not, so its background always extends under the status bar (edge-to-edge on Android 15+)
+            view.setPadding(maxOf(bars.left, cutout.left), 0, maxOf(bars.right, cutout.right), maxOf(bars.bottom, cutout.bottom))
+            for (page in listOf(readerContainer, marks)) {
+                val params = page.layoutParams as FrameLayout.LayoutParams
+                if (params.topMargin != top) {
+                    params.topMargin = top
+                    page.layoutParams = params
+                }
+            }
+            headerInset.intValue = statusTop
             WindowInsetsCompat.CONSUMED
         }
         setContentView(content)
