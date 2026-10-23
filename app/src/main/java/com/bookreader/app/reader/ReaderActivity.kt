@@ -204,10 +204,7 @@ class ReaderActivity : AppCompatActivity(), EpubNavigatorFragment.Listener {
             visibility = if (controlsVisible) View.VISIBLE else View.GONE
             setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed)
         }
-        val readerContainer = FragmentContainerView(this).apply {
-            id = R.id.reader_container
-            setBackgroundColor(pageBackground(dark))
-        }
+        val readerContainer = FragmentContainerView(this).apply { id = R.id.reader_container }
         val footer = ComposeView(this).apply {
             id = R.id.reader_footer
             setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed)
@@ -220,6 +217,9 @@ class ReaderActivity : AppCompatActivity(), EpubNavigatorFragment.Listener {
         // The page stops above the status line; the menus still overlay both
         val footerHeight = (FOOTER_HEIGHT.value * resources.displayMetrics.density).roundToInt()
         val content = FrameLayout(this).apply {
+            // The page color fills the whole screen, including the strips under the status bar / cutout and the navigation bar,
+            // which would otherwise show the theme's gray window background
+            setBackgroundColor(pageBackground(dark))
             addView(readerContainer, FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT).apply { bottomMargin = footerHeight })
             addView(footer, FrameLayout.LayoutParams(MATCH_PARENT, footerHeight, Gravity.BOTTOM))
             addView(controls, FrameLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT, Gravity.TOP))
@@ -417,7 +417,7 @@ class ReaderActivity : AppCompatActivity(), EpubNavigatorFragment.Listener {
                 launch {
                     combine(container.settings.themeMode, container.settings.readingStyle, ::Pair).collect { (mode, style) ->
                         val night = isDark(mode)
-                        readerContainer.setBackgroundColor(pageBackground(night))
+                        content.setBackgroundColor(pageBackground(night))
                         navigator.submitPreferences(readerPreferences(night, style))
                     }
                 }
