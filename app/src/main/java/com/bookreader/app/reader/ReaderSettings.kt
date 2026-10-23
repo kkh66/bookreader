@@ -36,7 +36,6 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.compose.ui.window.DialogWindowProvider
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.bookreader.app.data.SettingsRepository
 import com.bookreader.app.data.UserFont
 import com.bookreader.app.ui.components.Gap
 import com.bookreader.app.ui.components.ReadingBehaviorControls
@@ -48,8 +47,11 @@ import com.bookreader.app.ui.components.Space
  * [fonts] are the imported fonts registered when the book opened
  */
 @Composable
-internal fun ReaderSettingsDialog(settings: SettingsRepository, fonts: List<UserFont>, onDismiss: () -> Unit) {
-    val style by settings.readingStyle.collectAsStateWithLifecycle()
+internal fun ReaderSettingsDialog(viewModel: ReaderViewModel, fonts: List<UserFont>, onDismiss: () -> Unit) {
+    val style by viewModel.readingStyle.collectAsStateWithLifecycle()
+    val volumeKeyPaging by viewModel.volumeKeyPaging.collectAsStateWithLifecycle()
+    val hideStatusBar by viewModel.hideStatusBar.collectAsStateWithLifecycle()
+    val openLastOnLaunch by viewModel.openLastOnLaunch.collectAsStateWithLifecycle()
     var tab by rememberSaveable { mutableIntStateOf(0) }
     Dialog(
         onDismissRequest = onDismiss,
@@ -89,9 +91,12 @@ internal fun ReaderSettingsDialog(settings: SettingsRepository, fonts: List<User
                 Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = Space.XL)) {
                     Gap(Space.S)
                     if (tab == 0) {
-                        ReadingStyleControls(style, fonts, onChange = settings::setReadingStyle)
+                        ReadingStyleControls(style, fonts, onChange = viewModel::setReadingStyle)
                     } else {
-                        ReadingBehaviorControls(settings)
+                        ReadingBehaviorControls(
+                            volumeKeyPaging, hideStatusBar, openLastOnLaunch,
+                            viewModel::setVolumeKeyPaging, viewModel::setHideStatusBar, viewModel::setOpenLastOnLaunch,
+                        )
                     }
                     Gap(Space.L)
                 }

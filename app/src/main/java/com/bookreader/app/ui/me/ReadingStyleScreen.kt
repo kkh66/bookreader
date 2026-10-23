@@ -75,6 +75,9 @@ fun ReadingStyleScreen(
     val fonts by viewModel.fonts.collectAsStateWithLifecycle()
     val importing by viewModel.importing.collectAsStateWithLifecycle()
     val message by viewModel.message.collectAsStateWithLifecycle()
+    val volumeKeyPaging by viewModel.volumeKeyPaging.collectAsStateWithLifecycle()
+    val hideStatusBar by viewModel.hideStatusBar.collectAsStateWithLifecycle()
+    val openLastOnLaunch by viewModel.openLastOnLaunch.collectAsStateWithLifecycle()
     val snackbar = remember { SnackbarHostState() }
     var pendingDelete by remember { mutableStateOf<UserFont?>(null) }
     val secondary = MaterialTheme.colorScheme.onSurfaceVariant
@@ -110,7 +113,10 @@ fun ReadingStyleScreen(
                 SectionTitle("阅读行为", Modifier.padding(start = Space.XS, bottom = Space.M))
                 SurfaceCard {
                     Column(Modifier.padding(horizontal = Space.L, vertical = Space.XS)) {
-                        ReadingBehaviorControls(viewModel.settings)
+                        ReadingBehaviorControls(
+                            volumeKeyPaging, hideStatusBar, openLastOnLaunch,
+                            viewModel::setVolumeKeyPaging, viewModel::setHideStatusBar, viewModel::setOpenLastOnLaunch,
+                        )
                     }
                 }
                 Gap(Space.XL)
@@ -179,13 +185,16 @@ fun ReadingStyleScreen(
 }
 
 class ReadingStyleViewModel(
-    val settings: SettingsRepository,
+    private val settings: SettingsRepository,
     private val fontRepository: FontRepository,
     private val resolver: ContentResolver,
 ) : ViewModel() {
 
     val style = settings.readingStyle
     val fonts = fontRepository.fonts
+    val volumeKeyPaging = settings.volumeKeyPaging.state
+    val hideStatusBar = settings.readerHideStatusBar.state
+    val openLastOnLaunch = settings.openLastOnLaunch.state
 
     private val _importing = MutableStateFlow(false)
     val importing = _importing.asStateFlow()
@@ -194,6 +203,12 @@ class ReadingStyleViewModel(
     val message = _message.asStateFlow()
 
     fun setStyle(style: ReadingStyle) = settings.setReadingStyle(style)
+
+    fun setVolumeKeyPaging(on: Boolean) = settings.volumeKeyPaging.set(on)
+
+    fun setHideStatusBar(on: Boolean) = settings.readerHideStatusBar.set(on)
+
+    fun setOpenLastOnLaunch(on: Boolean) = settings.openLastOnLaunch.set(on)
 
     fun import(uri: Uri) {
         viewModelScope.launch {

@@ -16,10 +16,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.Stable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -35,80 +31,30 @@ import com.bookreader.app.ui.components.PagePadding
 import com.bookreader.app.ui.components.SearchHeader
 import com.bookreader.app.ui.components.Space
 import com.bookreader.app.ui.shelf.ShelfFormat
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.launch
-import org.readium.r2.shared.ExperimentalReadiumApi
 import org.readium.r2.shared.publication.Locator
-import org.readium.r2.shared.publication.Publication
-import org.readium.r2.shared.publication.services.search.search
-import org.readium.r2.shared.util.getOrElse
 
 /** Stop collecting after this many hits; a one-character query can match thousands of times */
-private const val MAX_RESULTS = 1000
+internal const val MAX_RESULTS = 1000
 
 /**
  * Full-text search in the open book, kept for the whole reading session
  * so reopening the panel shows the last query and its results
  */
-@Stable
-internal class ReaderSearchState {
-    var query by mutableStateOf("")
+internal data class ReaderSearchState(
+    val query: String = "",
     /** Query of the last search that ran; null before the first one */
-    var searched by mutableStateOf<String?>(null)
-        private set
-    var results by mutableStateOf(emptyList<Locator>())
-        private set
-    var running by mutableStateOf(false)
-        private set
-    var truncated by mutableStateOf(false)
-        private set
-    var error by mutableStateOf<String?>(null)
-        private set
-    private var job: Job? = null
-
-    /** Searches resource by resource, showing hits as they come in; a new search cancels the previous one */
-    @OptIn(ExperimentalReadiumApi::class)
-    fun run(scope: CoroutineScope, publication: Publication) {
-        val text = query.trim().ifEmpty { return }
-        job?.cancel()
-        searched = text
-        results = emptyList()
-        truncated = false
-        error = null
-        running = true
-        job = scope.launch {
-            val iterator = publication.search(text)
-            if (iterator == null) {
-                error = "这本书不支持搜索"
-                running = false
-                return@launch
-            }
-            try {
-                while (true) {
-                    val page = iterator.next().getOrElse {
-                        error = "搜索失败：${it.message}"
-                        null
-                    } ?: break
-                    results = results + page.locators
-                    if (results.size >= MAX_RESULTS) {
-                        results = results.take(MAX_RESULTS)
-                        truncated = true
-                        break
-                    }
-                }
-            } finally {
-                iterator.close()
-                running = false
-            }
-        }
-    }
-}
+    val searched: String? = null,
+    val results: List<Locator> = emptyList(),
+    val running: Boolean = false,
+    val truncated: Boolean = false,
+    val error: String? = null,
+)
 
 /** Full-screen search panel: query field on top, then a list of hits with chapter, snippet and position */
 @Composable
 internal fun ReaderSearchDialog(
     state: ReaderSearchState,
+    onQueryChange: (String) -> Unit,
     onSearch: () -> Unit,
     onOpen: (Locator) -> Unit,
     onDismiss: () -> Unit,
@@ -122,7 +68,7 @@ internal fun ReaderSearchDialog(
             Column(Modifier.systemBarsPadding().imePadding()) {
                 SearchHeader(
                     query = state.query,
-                    onQueryChange = { state.query = it },
+                    onQueryChange = onQueryChange,
                     placeholder = "搜索书中内容",
                     onClose = onDismiss,
                     horizontalPadding = Space.L,
