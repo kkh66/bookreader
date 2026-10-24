@@ -36,6 +36,7 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.compose.ui.window.DialogWindowProvider
 import com.bookreader.app.data.BookFormat
+import com.bookreader.app.data.PageAnimation
 import com.bookreader.app.data.ReadingStyle
 import com.bookreader.app.data.UserFont
 import com.bookreader.app.ui.components.Gap
@@ -44,10 +45,11 @@ import com.bookreader.app.ui.components.ReadingDirectionControls
 import com.bookreader.app.ui.components.ReadingStyleControls
 import com.bookreader.app.ui.components.Space
 
-/** Reading settings as the panel shows them: the text style, this book's page turn direction and the behavior switches */
+/** Reading settings as the panel shows them: the text style, this book's page turn direction and the behavior settings */
 internal data class ReaderSettingsState(
     val style: ReadingStyle = ReadingStyle(),
     val rightToLeft: Boolean = false,
+    val pageAnimation: PageAnimation = PageAnimation.Curl,
     val volumeKeyPaging: Boolean = false,
     val hideStatusBar: Boolean = false,
     val openLastOnLaunch: Boolean = false,
@@ -64,6 +66,7 @@ internal fun ReaderSettingsDialog(
     fonts: List<UserFont>,
     onStyleChange: (ReadingStyle) -> Unit,
     onRightToLeftChange: (Boolean) -> Unit,
+    onPageAnimationChange: (PageAnimation) -> Unit,
     onVolumeKeyPagingChange: (Boolean) -> Unit,
     onHideStatusBarChange: (Boolean) -> Unit,
     onOpenLastOnLaunchChange: (Boolean) -> Unit,
@@ -113,8 +116,8 @@ internal fun ReaderSettingsDialog(
                         ReadingDirectionControls(settings.rightToLeft, onChange = onRightToLeftChange)
                     } else {
                         ReadingBehaviorControls(
-                            settings.volumeKeyPaging, settings.hideStatusBar, settings.openLastOnLaunch,
-                            onVolumeKeyPagingChange, onHideStatusBarChange, onOpenLastOnLaunchChange,
+                            settings.pageAnimation, settings.volumeKeyPaging, settings.hideStatusBar, settings.openLastOnLaunch,
+                            onPageAnimationChange, onVolumeKeyPagingChange, onHideStatusBarChange, onOpenLastOnLaunchChange,
                         )
                     }
                     Gap(Space.L)

@@ -93,7 +93,7 @@ private fun decimal(value: Double) = String.format(Locale.US, "%.2f", value).tri
 
 /** Pill that fills in when selected; unselected uses the page background so it shows on cards and panels */
 @Composable
-private fun ChoiceChip(text: String, selected: Boolean, onClick: () -> Unit) {
+internal fun ChoiceChip(text: String, selected: Boolean, onClick: () -> Unit) {
     val colors = MaterialTheme.colorScheme
     Text(
         text,

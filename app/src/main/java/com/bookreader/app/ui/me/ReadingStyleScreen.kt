@@ -44,6 +44,7 @@ import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.bookreader.app.container
 import com.bookreader.app.data.FontRepository
+import com.bookreader.app.data.PageAnimation
 import com.bookreader.app.data.ReadingStyle
 import com.bookreader.app.data.SettingsRepository
 import com.bookreader.app.data.UserFont
@@ -75,6 +76,7 @@ fun ReadingStyleScreen(
     val fonts by viewModel.fonts.collectAsStateWithLifecycle()
     val importing by viewModel.importing.collectAsStateWithLifecycle()
     val message by viewModel.message.collectAsStateWithLifecycle()
+    val pageAnimation by viewModel.pageAnimation.collectAsStateWithLifecycle()
     val volumeKeyPaging by viewModel.volumeKeyPaging.collectAsStateWithLifecycle()
     val hideStatusBar by viewModel.hideStatusBar.collectAsStateWithLifecycle()
     val openLastOnLaunch by viewModel.openLastOnLaunch.collectAsStateWithLifecycle()
@@ -114,8 +116,9 @@ fun ReadingStyleScreen(
                 SurfaceCard {
                     Column(Modifier.padding(horizontal = Space.L, vertical = Space.XS)) {
                         ReadingBehaviorControls(
-                            volumeKeyPaging, hideStatusBar, openLastOnLaunch,
-                            viewModel::setVolumeKeyPaging, viewModel::setHideStatusBar, viewModel::setOpenLastOnLaunch,
+                            pageAnimation, volumeKeyPaging, hideStatusBar, openLastOnLaunch,
+                            viewModel::setPageAnimation, viewModel::setVolumeKeyPaging, viewModel::setHideStatusBar,
+                            viewModel::setOpenLastOnLaunch,
                         )
                     }
                 }
@@ -192,6 +195,7 @@ class ReadingStyleViewModel(
 
     val style = settings.readingStyle
     val fonts = fontRepository.fonts
+    val pageAnimation = settings.pageAnimation
     val volumeKeyPaging = settings.volumeKeyPaging.state
     val hideStatusBar = settings.readerHideStatusBar.state
     val openLastOnLaunch = settings.openLastOnLaunch.state
@@ -203,6 +207,8 @@ class ReadingStyleViewModel(
     val message = _message.asStateFlow()
 
     fun setStyle(style: ReadingStyle) = settings.setReadingStyle(style)
+
+    fun setPageAnimation(animation: PageAnimation) = settings.setPageAnimation(animation)
 
     fun setVolumeKeyPaging(on: Boolean) = settings.volumeKeyPaging.set(on)
 

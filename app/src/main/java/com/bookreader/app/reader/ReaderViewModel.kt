@@ -14,6 +14,7 @@ import com.bookreader.app.data.Bookmark
 import com.bookreader.app.data.BookRepository
 import com.bookreader.app.data.Highlight
 import com.bookreader.app.data.HighlightKind
+import com.bookreader.app.data.PageAnimation
 import com.bookreader.app.data.ReadingStyle
 import com.bookreader.app.data.SettingsRepository
 import com.bookreader.app.data.StatsRepository
@@ -75,6 +76,7 @@ class ReaderViewModel(
     val lastHighlight = settings.lastHighlight
     val volumeKeyPaging = settings.volumeKeyPaging.state
     val hideStatusBar = settings.readerHideStatusBar.state
+    val pageAnimation = settings.pageAnimation
 
     /** Imported fonts registered when the book opened */
     val fonts: List<UserFont> = session?.fonts?.map { it.font }.orEmpty()
@@ -120,12 +122,12 @@ class ReaderViewModel(
 
     internal val settingsState: StateFlow<ReaderSettingsState> = combine(
         readingStyle,
-        book.map { it?.rightToLeft ?: false },
+        combine(book.map { it?.rightToLeft ?: false }, pageAnimation, ::Pair),
         volumeKeyPaging,
         hideStatusBar,
         settings.openLastOnLaunch.state,
-    ) { style, rightToLeft, volumeKeys, hideStatus, openLast ->
-        ReaderSettingsState(style, rightToLeft, volumeKeys, hideStatus, openLast)
+    ) { style, (rightToLeft, animation), volumeKeys, hideStatus, openLast ->
+        ReaderSettingsState(style, rightToLeft, animation, volumeKeys, hideStatus, openLast)
     }.stateIn(viewModelScope, SharingStarted.Eagerly, ReaderSettingsState())
 
     /** What the menu over the page acts on: a text selection or a tapped highlight */
@@ -155,6 +157,8 @@ class ReaderViewModel(
     fun setReadingStyle(style: ReadingStyle) = settings.setReadingStyle(style)
 
     fun setVolumeKeyPaging(on: Boolean) = settings.volumeKeyPaging.set(on)
+
+    fun setPageAnimation(animation: PageAnimation) = settings.setPageAnimation(animation)
 
     fun setHideStatusBar(on: Boolean) = settings.readerHideStatusBar.set(on)
 

@@ -15,6 +15,7 @@ import android.view.KeyEvent
 import android.view.Menu
 import android.view.MenuItem
 import android.view.View
+import android.view.ViewGroup
 import android.view.ViewGroup.LayoutParams.MATCH_PARENT
 import android.view.ViewGroup.LayoutParams.WRAP_CONTENT
 import android.widget.FrameLayout
@@ -76,6 +77,7 @@ import com.bookreader.app.ui.shelf.ShelfFormat
 import com.bookreader.app.ui.theme.AppIcons
 import com.bookreader.app.ui.theme.BookReaderTheme
 import com.bookreader.app.ui.theme.isDark
+import com.github.barteksc.pdfviewer.PDFView
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
@@ -130,6 +132,12 @@ class ReaderActivity : AppCompatActivity(), EpubNavigatorFragment.Listener {
 
     private var selectionWatch: Job? = null
 
+    /** Text is being selected: drags then extend the selection rather than turn the page */
+    private var selecting = false
+
+    /** Holds the navigator and plays its page turns */
+    private var pageTurns: PageTurnLayout? = null
+
     /** Highlight taps, registered with Readium's navigator ViewModel, which outlives this activity, so removed in [onDestroy] */
     private var highlightListener: DecorableNavigator.Listener? = null
 
@@ -155,6 +163,7 @@ class ReaderActivity : AppCompatActivity(), EpubNavigatorFragment.Listener {
     private val selectionCallback = object : ActionMode.Callback {
         override fun onCreateActionMode(mode: ActionMode, menu: Menu): Boolean {
             menu.clear()
+            selecting = true
             watchSelection()
             return true
         }
@@ -167,6 +176,7 @@ class ReaderActivity : AppCompatActivity(), EpubNavigatorFragment.Listener {
         override fun onActionItemClicked(mode: ActionMode, item: MenuItem) = false
 
         override fun onDestroyActionMode(mode: ActionMode) {
+            selecting = false
             selectionWatch?.cancel()
             viewModel.onSelectionEnded()
         }
@@ -231,6 +241,12 @@ class ReaderActivity : AppCompatActivity(), EpubNavigatorFragment.Listener {
             // Readium's image navigator lays its pages out in the view's direction: right to left reverses them, as in manga
             if (session.format == BookFormat.CBZ) layoutDirection = pageDirection(rightToLeft)
         }
+        val pageTurns = PageTurnLayout(this, window).apply {
+            addView(readerContainer, FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT))
+            animation = viewModel.pageAnimation.value
+            pageColor = pageBackground(dark)
+        }
+        this.pageTurns = pageTurns
         val footer = ComposeView(this).apply {
             id = R.id.reader_footer
             setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed)
@@ -246,7 +262,7 @@ class ReaderActivity : AppCompatActivity(), EpubNavigatorFragment.Listener {
             // The page color fills the whole screen, including the strips under the status bar / cutout and the navigation bar,
             // which would otherwise show the theme's gray window background
             setBackgroundColor(pageBackground(dark))
-            addView(readerContainer, FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT).apply { bottomMargin = footerHeight })
+            addView(pageTurns, FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT).apply { bottomMargin = footerHeight })
             addView(footer, FrameLayout.LayoutParams(MATCH_PARENT, footerHeight, Gravity.BOTTOM))
             addView(controls, FrameLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT, Gravity.TOP))
             addView(bottomControls, FrameLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT, Gravity.BOTTOM))
@@ -263,7 +279,7 @@ class ReaderActivity : AppCompatActivity(), EpubNavigatorFragment.Listener {
             val top = if (hideStatusBar) cutout.top else statusTop
             // Only the page layers are pushed down; the header is not, so its background always extends under the status bar (edge-to-edge on Android 15+)
             view.setPadding(maxOf(bars.left, cutout.left), 0, maxOf(bars.right, cutout.right), maxOf(bars.bottom, cutout.bottom))
-            for (page in listOf(readerContainer, marks)) {
+            for (page in listOf(pageTurns, marks)) {
                 val params = page.layoutParams as FrameLayout.LayoutParams
                 if (params.topMargin != top) {
                     params.topMargin = top
@@ -287,6 +303,14 @@ class ReaderActivity : AppCompatActivity(), EpubNavigatorFragment.Listener {
         }
         val navigator = supportFragmentManager.findFragmentByTag(NAVIGATOR_TAG) as OverflowableNavigator
         val epub = navigator as? EpubNavigatorFragment
+        pageTurns.rightToLeft = {
+            // A comic turns the way picked for it; Readium's image navigator only knows the book's own direction
+            if (session.format == BookFormat.CBZ) rightToLeft else navigator.overflow.value.readingProgression == ReadingProgression.RTL
+        }
+        // A screenshot of the page would carry the menu along
+        pageTurns.effectsEnabled = { !controlsVisible }
+        pageTurns.dragTurnsEnabled = { !selecting && viewModel.markMenu.value == null && pdfView()?.isZooming != true }
+        pageTurns.navigate = { forward, animated -> if (forward) navigator.goForward(animated) else navigator.goBackward(animated) }
         navigator.addInputListener(object : InputListener {
             override fun onTap(event: TapEvent): Boolean {
                 // A tap anywhere on the page first closes an open highlight menu
@@ -296,9 +320,8 @@ class ReaderActivity : AppCompatActivity(), EpubNavigatorFragment.Listener {
                 val left = event.point.x <= edge
                 val right = event.point.x >= width - edge
                 if (left || right) {
-                    // The image navigator only knows the book's own direction, so a comic's edges are turned here; other formats use the adapter below
-                    if (session.format != BookFormat.CBZ) return false
-                    if (right != rightToLeft) navigator.goForward(animated = true) else navigator.goBackward(animated = true)
+                    // Tapping the left or right 30% turns the page, following the reading direction
+                    pageTurns.turn(forward = right != pageTurns.rightToLeft())
                     return true
                 }
                 controlsVisible = !controlsVisible
@@ -308,15 +331,8 @@ class ReaderActivity : AppCompatActivity(), EpubNavigatorFragment.Listener {
                 return true
             }
         })
-        // Tapping the left or right 30% turns the page (following the reading direction); keyboard arrow keys work too
-        navigator.addInputListener(
-            DirectionalNavigationAdapter(
-                navigator,
-                minimumHorizontalEdgeSize = TAP_EDGE_MIN.toDouble(),
-                horizontalEdgeThresholdPercent = TAP_EDGE_RATIO.toDouble(),
-                animatedTransition = true,
-            ),
-        )
+        // Keyboard arrow keys turn pages too; taps are handled above
+        navigator.addInputListener(DirectionalNavigationAdapter(navigator, tapEdges = emptySet(), animatedTransition = true))
 
         highlightListener = object : DecorableNavigator.Listener {
             override fun onDecorationActivated(event: DecorableNavigator.OnActivatedEvent): Boolean {
@@ -388,6 +404,7 @@ class ReaderActivity : AppCompatActivity(), EpubNavigatorFragment.Listener {
                             fonts = viewModel.fonts,
                             onStyleChange = viewModel::setReadingStyle,
                             onRightToLeftChange = viewModel::setRightToLeft,
+                            onPageAnimationChange = viewModel::setPageAnimation,
                             onVolumeKeyPagingChange = viewModel::setVolumeKeyPaging,
                             onHideStatusBarChange = viewModel::setHideStatusBar,
                             onOpenLastOnLaunchChange = viewModel::setOpenLastOnLaunch,
@@ -454,7 +471,13 @@ class ReaderActivity : AppCompatActivity(), EpubNavigatorFragment.Listener {
         lifecycleScope.launch {
             repeatOnLifecycle(Lifecycle.State.STARTED) {
                 launch { viewModel.messages.collect(::showMessage) }
-                launch { navigator.currentLocator.collect { viewModel.onLocationChanged(it) } }
+                launch {
+                    navigator.currentLocator.collect {
+                        viewModel.onLocationChanged(it)
+                        pageTurns.pageChanged()
+                    }
+                }
+                launch { viewModel.pageAnimation.collect { pageTurns.animation = it } }
                 if (epub != null) {
                     // The page's text selection lives only as long as its menu: closing the menu,
                     // or turning the selection into a highlight, clears it
@@ -480,6 +503,7 @@ class ReaderActivity : AppCompatActivity(), EpubNavigatorFragment.Listener {
                     combine(viewModel.themeMode, viewModel.readingStyle, ::Pair).collect { (mode, style) ->
                         val night = isDark(mode)
                         content.setBackgroundColor(pageBackground(night))
+                        pageTurns.pageColor = pageBackground(night)
                         epub?.submitPreferences(readerPreferences(night, style))
                     }
                 }
@@ -527,6 +551,12 @@ class ReaderActivity : AppCompatActivity(), EpubNavigatorFragment.Listener {
             }
         }
     }
+
+    /** The PDF's page view, to tell whether it's zoomed in: a drag then pans the page instead of turning it */
+    private fun pdfView(): PDFView? = pdfNavigator?.view?.let(::findPdfView)
+
+    private fun findPdfView(view: View): PDFView? =
+        view as? PDFView ?: (view as? ViewGroup)?.let { group -> (0 until group.childCount).firstNotNullOfOrNull { findPdfView(group.getChildAt(it)) } }
 
     /** A long-pressed illustration, shown full screen at about the screen's size */
     private fun openImage(src: String) {
@@ -606,10 +636,7 @@ class ReaderActivity : AppCompatActivity(), EpubNavigatorFragment.Listener {
     override fun onKeyDown(keyCode: Int, event: KeyEvent): Boolean {
         val forward = volumePageDirection(keyCode) ?: return super.onKeyDown(keyCode, event)
         // Holding the key doesn't keep turning pages; one press turns one page
-        if (event.repeatCount == 0) {
-            val navigator = supportFragmentManager.findFragmentByTag(NAVIGATOR_TAG) as? OverflowableNavigator
-            if (forward) navigator?.goForward(animated = true) else navigator?.goBackward(animated = true)
-        }
+        if (event.repeatCount == 0) pageTurns?.turn(forward)
         return true
     }
 
