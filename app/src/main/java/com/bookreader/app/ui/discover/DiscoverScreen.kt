@@ -59,7 +59,7 @@ fun DiscoverScreen(
     onOpenLibrary: (id: String) -> Unit,
     onAddLibrary: () -> Unit,
     onEditLibrary: (id: String) -> Unit,
-    onImportEpub: () -> Unit,
+    onImportBook: () -> Unit,
     viewModel: DiscoverViewModel = viewModel(factory = DiscoverViewModel.Factory),
 ) {
     val libraries by viewModel.items.collectAsStateWithLifecycle()
@@ -80,9 +80,9 @@ fun DiscoverScreen(
                     CircleIconButton(AppIcons.More, "更多") { menu = true }
                     DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
                         DropdownMenuItem(
-                            text = { Text("导入本地 EPUB") },
+                            text = { Text("导入本地书籍") },
                             leadingIcon = { Icon(AppIcons.Import, null) },
-                            onClick = { menu = false; onImportEpub() },
+                            onClick = { menu = false; onImportBook() },
                         )
                         DropdownMenuItem(
                             text = { Text("添加书库") },

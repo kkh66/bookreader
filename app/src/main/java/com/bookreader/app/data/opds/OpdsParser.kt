@@ -1,5 +1,6 @@
 package com.bookreader.app.data.opds
 
+import com.bookreader.app.data.BookFormat
 import org.jsoup.Jsoup
 import org.jsoup.nodes.Element
 import org.jsoup.parser.Parser
@@ -11,11 +12,13 @@ sealed interface OpdsEntry {
     /** Navigation entry: a child catalog */
     data class Folder(override val title: String, val url: String, val summary: String = "") : OpdsEntry
 
-    /** Book entry: epub acquisition link + info for the details dialog */
-    data class Epub(
+    /** Book entry: acquisition link of a format the reader opens + info for the details dialog */
+    data class Book(
         override val title: String,
         val author: String,
         val downloadUrl: String,
+        /** Format of [downloadUrl]: EPUB when offered, otherwise CBZ, then PDF */
+        val format: BookFormat,
         val size: Long,
         val summary: String = "",
         val coverUrl: String? = null,
@@ -44,6 +47,15 @@ data class OpdsPage(
 object OpdsParser {
 
     const val EPUB_TYPE = "application/epub+zip"
+    const val PDF_TYPE = "application/pdf"
+    private val CBZ_TYPES = listOf("application/vnd.comicbook+zip", "application/x-cbz")
+
+    /** Download preference: EPUB reflows, a comic offered as both CBZ and PDF keeps its images as they are in CBZ */
+    private val DOWNLOAD_FORMATS = listOf(EPUB_TYPE to BookFormat.EPUB) +
+        CBZ_TYPES.map { it to BookFormat.CBZ } + (PDF_TYPE to BookFormat.PDF)
+
+    /** MIME types the file picker offers for import; .cbz files often come as a plain zip or with no type at all */
+    val IMPORT_TYPES = arrayOf(EPUB_TYPE, PDF_TYPE) + CBZ_TYPES + arrayOf("application/zip", "application/octet-stream")
     private const val ATOM_TYPE = "application/atom+xml"
     private const val ACQUISITION_REL = "http://opds-spec.org/acquisition"
     private const val CATALOG_PROFILE = "profile=opds-catalog"
@@ -55,11 +67,12 @@ object OpdsParser {
     )
     private val FORMAT_NAMES = mapOf(
         EPUB_TYPE to "EPUB",
-        "application/pdf" to "PDF",
+        PDF_TYPE to "PDF",
         "application/x-mobipocket-ebook" to "MOBI",
         "application/vnd.amazon.ebook" to "AZW3",
         "text/plain" to "TXT",
         "application/x-cbz" to "CBZ",
+        "application/vnd.comicbook+zip" to "CBZ",
     )
 
     fun parse(xml: String, feedUrl: String): OpdsPage {
@@ -82,15 +95,16 @@ object OpdsParser {
         val title = entry.childText("title").ifBlank { return null }
         val links = entry.childrenNamed("link")
         val acquisitions = links.filter { it.attr("rel").startsWith(ACQUISITION_REL) }
-        acquisitions.firstOrNull { it.mimeType() == EPUB_TYPE }
-            ?.let {
+        DOWNLOAD_FORMATS.firstNotNullOfOrNull { (type, format) -> acquisitions.firstOrNull { it.mimeType() == type }?.to(format) }
+            ?.let { (acquisition, format) ->
                 fun linkWith(rels: Set<String>) =
                     links.firstOrNull { link -> link.attr("rel") in rels }?.let { link -> resolve(feedUrl, link.attr("href")) }
-                return OpdsEntry.Epub(
+                return OpdsEntry.Book(
                     title = title,
                     author = entry.childrenNamed("author").joinToString { a -> a.childText("name") },
-                    downloadUrl = resolve(feedUrl, it.attr("href")),
-                    size = it.attr("length").toLongOrNull() ?: 0,
+                    downloadUrl = resolve(feedUrl, acquisition.attr("href")),
+                    format = format,
+                    size = acquisition.attr("length").toLongOrNull() ?: 0,
                     summary = description(entry),
                     coverUrl = linkWith(COVER_RELS),
                     thumbnailUrl = linkWith(THUMBNAIL_RELS),
@@ -105,7 +119,7 @@ object OpdsParser {
                     formats = acquisitions.map { a -> formatName(a) }.distinct(),
                 )
             }
-        // Books with acquisition links but no epub format are skipped, not treated as folders
+        // Books with acquisition links but none in a format the reader opens are skipped, not treated as folders
         if (links.any { it.attr("rel").startsWith(ACQUISITION_REL) }) return null
         return links.firstOrNull { it.attr("type").contains(CATALOG_PROFILE) }
             ?.let { OpdsEntry.Folder(title, resolve(feedUrl, it.attr("href")), entry.childText("content")) }

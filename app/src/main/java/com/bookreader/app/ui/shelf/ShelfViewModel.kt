@@ -13,6 +13,7 @@ import com.bookreader.app.data.Book
 import com.bookreader.app.data.BookRepository
 import com.bookreader.app.data.SettingsRepository
 import com.bookreader.app.data.StatsRepository
+import com.bookreader.app.data.displayName
 import com.bookreader.app.reader.ReaderRepository
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -26,6 +27,7 @@ import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.io.IOException
 
 /** Shelf item: book + cover path + total seconds spent reading it */
@@ -160,9 +162,13 @@ class ShelfViewModel(
         }
     }
 
-    fun importEpub(uri: Uri) = launchBusy {
-        val input = resolver.openInputStream(uri) ?: throw IOException("无法读取文件")
-        val book = books.import(input, fallbackTitle = uri.lastPathSegment ?: "未命名")
+    fun importBook(uri: Uri) = launchBusy {
+        // Opening a document can block while a cloud provider downloads it
+        val (input, name) = withContext(Dispatchers.IO) {
+            (resolver.openInputStream(uri) ?: throw IOException("无法读取文件")) to resolver.displayName(uri)
+        }
+        // Comics have no title of their own, so the file name stands in
+        val book = books.import(input, fallbackTitle = name?.substringBeforeLast('.')?.ifBlank { null } ?: "未命名")
         message.value = "已导入《${book.title}》"
     }
 

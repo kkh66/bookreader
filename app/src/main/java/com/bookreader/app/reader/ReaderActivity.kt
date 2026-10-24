@@ -71,6 +71,7 @@ import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
 import com.bookreader.app.R
 import com.bookreader.app.data.Book
+import com.bookreader.app.data.BookFormat
 import com.bookreader.app.data.Bookmark
 import com.bookreader.app.data.Highlight
 import com.bookreader.app.data.HighlightKind
@@ -88,18 +89,28 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import org.json.JSONObject
+import org.readium.adapter.pdfium.navigator.PdfiumEngineProvider
+import org.readium.adapter.pdfium.navigator.PdfiumNavigatorFragment
+import org.readium.adapter.pdfium.navigator.PdfiumPreferences
 import org.readium.r2.navigator.Decoration
 import org.readium.r2.navigator.DecorableNavigator
+import org.readium.r2.navigator.OverflowableNavigator
+import org.readium.r2.navigator.epub.EpubNavigatorFactory
 import org.readium.r2.navigator.epub.EpubNavigatorFragment
 import org.readium.r2.navigator.epub.EpubPreferences
+import org.readium.r2.navigator.image.ImageNavigatorFragment
+import org.readium.r2.navigator.pdf.PdfNavigatorFactory
+import org.readium.r2.navigator.pdf.PdfNavigatorFragment
 import org.readium.r2.navigator.input.InputListener
 import org.readium.r2.navigator.input.TapEvent
 import org.readium.r2.navigator.preferences.Theme
 import org.readium.r2.navigator.preferences.Color as ReadiumColor
 import org.readium.r2.navigator.preferences.FontFamily
+import org.readium.r2.navigator.preferences.ReadingProgression
 import org.readium.r2.navigator.util.DirectionalNavigationAdapter
 import org.readium.r2.shared.ExperimentalReadiumApi
 import org.readium.r2.shared.publication.Locator
@@ -109,7 +120,9 @@ import org.readium.r2.shared.util.AbsoluteUrl
 import kotlin.math.roundToInt
 
 /**
- * Reader screen: hosts Readium's EpubNavigatorFragment; it only displays the book and reports progress to the ViewModel
+ * Reader screen: hosts Readium's navigator for the book's format (EPUB, PDF via PDFium, or the image navigator for CBZ);
+ * it only displays the book and reports progress to the ViewModel
+ * Text selection, highlights, search and text style exist only for EPUB; PDF and comics turn pages in a direction chosen per book
  * The Publication must be opened first with [ReaderRepository.open]
  */
 @OptIn(ExperimentalReadiumApi::class)
@@ -135,7 +148,17 @@ class ReaderActivity : AppCompatActivity(), EpubNavigatorFragment.Listener {
 
     private var selectionWatch: Job? = null
 
-    private val navigator get() = supportFragmentManager.findFragmentByTag(NAVIGATOR_TAG) as EpubNavigatorFragment
+    private val navigator get() = supportFragmentManager.findFragmentByTag(NAVIGATOR_TAG) as OverflowableNavigator
+
+    /** The navigator when the book is an EPUB, which alone has text selection, highlights and page scripts */
+    private val epubNavigator get() = supportFragmentManager.findFragmentByTag(NAVIGATOR_TAG) as? EpubNavigatorFragment
+
+    /** The navigator when the book is a PDF, created with the PDFium engine */
+    @Suppress("UNCHECKED_CAST")
+    private val pdfNavigator get() = supportFragmentManager.findFragmentByTag(NAVIGATOR_TAG) as? PdfiumNavigatorFragment
+
+    /** Page turn direction picked for this PDF / comic */
+    private val rightToLeft get() = viewModel.book.value?.rightToLeft ?: false
 
     /**
      * Replaces the system text selection toolbar: an empty action mode keeps the selection handles,
@@ -172,22 +195,32 @@ class ReaderActivity : AppCompatActivity(), EpubNavigatorFragment.Listener {
         // Must be set before super.onCreate; fragment restoration needs it
         // Page colors and text style are passed up front so the first page never flashes in the wrong style
         val dark = isDark(viewModel.themeMode.value)
-        supportFragmentManager.fragmentFactory = session.navigatorFactory.createFragmentFactory(
-            initialLocator = session.initialLocator,
-            initialPreferences = readerPreferences(dark, viewModel.readingStyle.value),
-            listener = this,
-            configuration = EpubNavigatorFragment.Configuration {
-                decorationTemplates = highlightTemplates()
-                selectionActionModeCallback = selectionCallback
-                registerJavascriptInterface(IMAGE_BRIDGE) { ImageLongPressBridge { src -> runOnUiThread { openImage(src) } } }
-                // Imported fonts, each served as a resource of the publication (see ReaderRepository)
-                session.fonts.forEach { served ->
-                    addFontFamilyDeclaration(FontFamily(served.font.family)) {
-                        addFontFace { addSource(served.url) }
+        // A PDF or comic recreated with the activity starts from its last saved page rather than where the book was opened
+        val lastLocator = viewModel.book.value?.locator?.let { runCatching { Locator.fromJSON(JSONObject(it)) }.getOrNull() }
+            ?: session.initialLocator
+        supportFragmentManager.fragmentFactory = when (session.format) {
+            BookFormat.EPUB -> EpubNavigatorFactory(session.publication).createFragmentFactory(
+                initialLocator = session.initialLocator,
+                initialPreferences = readerPreferences(dark, viewModel.readingStyle.value),
+                listener = this,
+                configuration = EpubNavigatorFragment.Configuration {
+                    decorationTemplates = highlightTemplates()
+                    selectionActionModeCallback = selectionCallback
+                    registerJavascriptInterface(IMAGE_BRIDGE) { ImageLongPressBridge { src -> runOnUiThread { openImage(src) } } }
+                    // Imported fonts, each served as a resource of the publication (see ReaderRepository)
+                    session.fonts.forEach { served ->
+                        addFontFamilyDeclaration(FontFamily(served.font.family)) {
+                            addFontFace { addSource(served.url) }
+                        }
                     }
-                }
-            },
-        )
+                },
+            )
+            BookFormat.PDF -> PdfNavigatorFactory(session.publication, PdfiumEngineProvider()).createFragmentFactory(
+                initialLocator = lastLocator,
+                initialPreferences = pdfPreferences(rightToLeft),
+            )
+            BookFormat.CBZ -> ImageNavigatorFragment.createFactory(session.publication, lastLocator)
+        }
         super.onCreate(savedInstanceState)
         title = session.book.title
         enableEdgeToEdge()
@@ -203,7 +236,11 @@ class ReaderActivity : AppCompatActivity(), EpubNavigatorFragment.Listener {
             visibility = if (controlsVisible) View.VISIBLE else View.GONE
             setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed)
         }
-        val readerContainer = FragmentContainerView(this).apply { id = R.id.reader_container }
+        val readerContainer = FragmentContainerView(this).apply {
+            id = R.id.reader_container
+            // Readium's image navigator lays its pages out in the view's direction: right to left reverses them, as in manga
+            if (session.format == BookFormat.CBZ) layoutDirection = pageDirection(rightToLeft)
+        }
         val footer = ComposeView(this).apply {
             id = R.id.reader_footer
             setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed)
@@ -249,13 +286,17 @@ class ReaderActivity : AppCompatActivity(), EpubNavigatorFragment.Listener {
         setContentView(content)
 
         if (savedInstanceState == null) {
+            val navigatorClass = when (session.format) {
+                BookFormat.EPUB -> EpubNavigatorFragment::class.java
+                BookFormat.PDF -> PdfNavigatorFragment::class.java
+                BookFormat.CBZ -> ImageNavigatorFragment::class.java
+            }
             supportFragmentManager.commitNow {
-                add(R.id.reader_container, EpubNavigatorFragment::class.java, Bundle(), NAVIGATOR_TAG)
+                add(R.id.reader_container, navigatorClass, Bundle(), NAVIGATOR_TAG)
             }
         }
-        val navigator = supportFragmentManager.findFragmentByTag(NAVIGATOR_TAG) as EpubNavigatorFragment
-        // Tapping the left or right 30% turns the page (following the reading direction); keyboard arrow keys work too
-        navigator.addInputListener(DirectionalNavigationAdapter(navigator, animatedTransition = true))
+        val navigator = supportFragmentManager.findFragmentByTag(NAVIGATOR_TAG) as OverflowableNavigator
+        val epub = navigator as? EpubNavigatorFragment
         navigator.addInputListener(object : InputListener {
             override fun onTap(event: TapEvent): Boolean {
                 // A tap anywhere on the page first closes an open highlight menu
@@ -264,8 +305,15 @@ class ReaderActivity : AppCompatActivity(), EpubNavigatorFragment.Listener {
                     return true
                 }
                 val width = navigator.publicationView.width
-                val edge = maxOf(80f, width * 0.3f)
-                if (event.point.x <= edge || event.point.x >= width - edge) return false
+                val edge = maxOf(TAP_EDGE_MIN, width * TAP_EDGE_RATIO)
+                val left = event.point.x <= edge
+                val right = event.point.x >= width - edge
+                if (left || right) {
+                    // The image navigator only knows the book's own direction, so a comic's edges are turned here; other formats use the adapter below
+                    if (session.format != BookFormat.CBZ) return false
+                    if (right != rightToLeft) navigator.goForward(animated = true) else navigator.goBackward(animated = true)
+                    return true
+                }
                 controlsVisible = !controlsVisible
                 controls.visibility = if (controlsVisible) View.VISIBLE else View.GONE
                 bottomControls.visibility = controls.visibility
@@ -273,8 +321,17 @@ class ReaderActivity : AppCompatActivity(), EpubNavigatorFragment.Listener {
                 return true
             }
         })
+        // Tapping the left or right 30% turns the page (following the reading direction); keyboard arrow keys work too
+        navigator.addInputListener(
+            DirectionalNavigationAdapter(
+                navigator,
+                minimumHorizontalEdgeSize = TAP_EDGE_MIN.toDouble(),
+                horizontalEdgeThresholdPercent = TAP_EDGE_RATIO.toDouble(),
+                animatedTransition = true,
+            ),
+        )
 
-        navigator.addDecorationListener(HIGHLIGHT_GROUP, object : DecorableNavigator.Listener {
+        epub?.addDecorationListener(HIGHLIGHT_GROUP, object : DecorableNavigator.Listener {
             override fun onDecorationActivated(event: DecorableNavigator.OnActivatedEvent): Boolean {
                 val highlight = currentBook()?.highlights?.firstOrNull { it.id == event.decoration.id } ?: return false
                 val rect = event.rect ?: event.point?.let { RectF(it.x, it.y, it.x, it.y) } ?: return false
@@ -360,12 +417,17 @@ class ReaderActivity : AppCompatActivity(), EpubNavigatorFragment.Listener {
                 locator = locator,
                 background = Color(pageBackground(night)),
                 contentColor = Color(if (night) DARK_TEXT else LIGHT_TEXT).copy(alpha = 0.55f),
+                chapterProgress = session.format == BookFormat.EPUB,
             )
         }
         controls.setContent {
             val topInset = with(LocalDensity.current) { headerInset.intValue.toDp() }
             ReaderTheme {
-                ReaderHeader(session.book.title, topInset, onBack = ::finish, onSearch = { showingSearch.value = true })
+                ReaderHeader(
+                    session.book.title, topInset, onBack = ::finish,
+                    // Only EPUB text can be searched
+                    onSearch = if (session.format == BookFormat.EPUB) ({ showingSearch.value = true }) else null,
+                )
             }
         }
         bottomControls.setContent {
@@ -376,6 +438,7 @@ class ReaderActivity : AppCompatActivity(), EpubNavigatorFragment.Listener {
                 ReaderControls(
                     book = book,
                     publication = session.publication,
+                    format = session.format,
                     navigator = navigator,
                     locator = locator,
                     onMessage = ::showMessage,
@@ -405,23 +468,33 @@ class ReaderActivity : AppCompatActivity(), EpubNavigatorFragment.Listener {
             repeatOnLifecycle(Lifecycle.State.STARTED) {
                 launch { viewModel.messages.collect(::showMessage) }
                 launch { navigator.currentLocator.collect { viewModel.saveProgress(it) } }
-                // Long press on illustrations: the script goes into whichever document is showing (it skips documents that already have it)
-                launch { navigator.currentLocator.collectLatest { navigator.evaluateJavascript(IMAGE_LONG_PRESS_SCRIPT) } }
-                // Saved highlights drawn on the page; Readium only redraws what changed
-                launch {
-                    viewModel.book
-                        .map { it?.highlights.orEmpty() }
-                        .distinctUntilChanged()
-                        .collect { highlights ->
-                            navigator.applyDecorations(highlights.mapNotNull { it.toDecoration() }, HIGHLIGHT_GROUP)
-                        }
+                if (epub != null) {
+                    // Long press on illustrations: the script goes into whichever document is showing (it skips documents that already have it)
+                    launch { epub.currentLocator.collectLatest { epub.evaluateJavascript(IMAGE_LONG_PRESS_SCRIPT) } }
+                    // Saved highlights drawn on the page; Readium only redraws what changed
+                    launch {
+                        viewModel.book
+                            .map { it?.highlights.orEmpty() }
+                            .distinctUntilChanged()
+                            .collect { highlights ->
+                                epub.applyDecorations(highlights.mapNotNull { it.toDecoration() }, HIGHLIGHT_GROUP)
+                            }
+                    }
                 }
                 // Appearance (Me tab) and text style (reading settings) apply to the page right away
                 launch {
                     combine(viewModel.themeMode, viewModel.readingStyle, ::Pair).collect { (mode, style) ->
                         val night = isDark(mode)
                         content.setBackgroundColor(pageBackground(night))
-                        navigator.submitPreferences(readerPreferences(night, style))
+                        epub?.submitPreferences(readerPreferences(night, style))
+                    }
+                }
+                // Page turn direction picked in the settings (the first value is already in place): a PDF re-lays out its pages,
+                // a comic's pager reverses its order
+                launch {
+                    viewModel.book.map { it?.rightToLeft ?: false }.distinctUntilChanged().drop(1).collect { rtl ->
+                        if (session.format == BookFormat.PDF) pdfNavigator?.submitPreferences(pdfPreferences(rtl))
+                        if (session.format == BookFormat.CBZ) readerContainer.layoutDirection = pageDirection(rtl)
                     }
                 }
                 // Toggling "hide status bar" in settings takes effect immediately
@@ -452,7 +525,7 @@ class ReaderActivity : AppCompatActivity(), EpubNavigatorFragment.Listener {
         selectionWatch?.cancel()
         selectionWatch = lifecycleScope.launch {
             while (true) {
-                val selection = navigator.currentSelection()
+                val selection = epubNavigator?.currentSelection()
                 if (markTarget.value !is MarkTarget.Existing) {
                     markTarget.value = selection?.let {
                         MarkTarget.Selection(it.locator, it.rect ?: RectF(0f, 0f, navigator.publicationView.width.toFloat(), 0f))
@@ -475,7 +548,7 @@ class ReaderActivity : AppCompatActivity(), EpubNavigatorFragment.Listener {
                 val created = viewModel.createHighlight(target.locator, kind, color)
                 selectionWatch?.cancel()
                 markTarget.value = MarkTarget.Existing(created, target.rect)
-                navigator.clearSelection()
+                epubNavigator?.clearSelection()
             }
         }
     }
@@ -483,7 +556,7 @@ class ReaderActivity : AppCompatActivity(), EpubNavigatorFragment.Listener {
     private fun closeMarkMenu() {
         selectionWatch?.cancel()
         markTarget.value = null
-        navigator.clearSelection()
+        epubNavigator?.clearSelection()
     }
 
     /** A long-pressed illustration, shown full screen at about the screen's size */
@@ -498,7 +571,7 @@ class ReaderActivity : AppCompatActivity(), EpubNavigatorFragment.Listener {
         val forward = volumePageDirection(keyCode) ?: return super.onKeyDown(keyCode, event)
         // Holding the key doesn't keep turning pages; one press turns one page
         if (event.repeatCount == 0) {
-            val navigator = supportFragmentManager.findFragmentByTag(NAVIGATOR_TAG) as? EpubNavigatorFragment
+            val navigator = supportFragmentManager.findFragmentByTag(NAVIGATOR_TAG) as? OverflowableNavigator
             if (forward) navigator?.goForward(animated = true) else navigator?.goBackward(animated = true)
         }
         return true
@@ -584,7 +657,7 @@ class ReaderActivity : AppCompatActivity(), EpubNavigatorFragment.Listener {
 }
 
 @Composable
-private fun ReaderHeader(title: String, topInset: Dp, onBack: () -> Unit, onSearch: () -> Unit) {
+private fun ReaderHeader(title: String, topInset: Dp, onBack: () -> Unit, onSearch: (() -> Unit)?) {
     Surface(color = MaterialTheme.colorScheme.background) {
         // When the status bar overlays the top bar, the bar's background extends under it and the content moves down
         Column(Modifier.padding(top = topInset)) {
@@ -601,7 +674,7 @@ private fun ReaderHeader(title: String, topInset: Dp, onBack: () -> Unit, onSear
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.weight(1f).padding(horizontal = Space.S),
                 )
-                IconButton(onClick = onSearch) { Icon(AppIcons.Search, "搜索") }
+                onSearch?.let { IconButton(onClick = it) { Icon(AppIcons.Search, "搜索") } }
             }
             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
         }
@@ -609,6 +682,10 @@ private fun ReaderHeader(title: String, topInset: Dp, onBack: () -> Unit, onSear
 }
 
 private const val SEEK_SETTLE_MS = 500L
+
+/** Taps within this share of the page width from either edge (at least [TAP_EDGE_MIN] px) turn the page */
+private const val TAP_EDGE_RATIO = 0.3f
+private const val TAP_EDGE_MIN = 80f
 
 /** How often the selection menu follows the selection while its handles are dragged */
 private const val SELECTION_WATCH_MS = 300L
@@ -624,6 +701,12 @@ private val LIGHT_PAGE = 0xFFFFFFFF.toInt()
 private val LIGHT_TEXT = 0xFF141414.toInt()
 
 private fun pageBackground(dark: Boolean) = if (dark) DARK_PAGE else LIGHT_PAGE
+
+/** PDF pages turn sideways like a book's, right to left for manga */
+private fun pdfPreferences(rightToLeft: Boolean) =
+    PdfiumPreferences(readingProgression = if (rightToLeft) ReadingProgression.RTL else ReadingProgression.LTR)
+
+private fun pageDirection(rightToLeft: Boolean) = if (rightToLeft) View.LAYOUT_DIRECTION_RTL else View.LAYOUT_DIRECTION_LTR
 
 /** EPUB page appearance: light / dark colors plus the user's text style */
 private fun readerPreferences(dark: Boolean, style: ReadingStyle) = EpubPreferences(
@@ -642,12 +725,14 @@ private fun readerPreferences(dark: Boolean, style: ReadingStyle) = EpubPreferen
 /**
  * Bottom menu: previous chapter / whole-book progress slider / next chapter, with contents, bookmarks and reading settings below;
  * also hosts the search dialog, opened from the top bar or the selection menu
+ * A book without contents (a comic) has no chapter buttons
  */
 @Composable
 private fun ReaderControls(
     book: Book,
     publication: Publication,
-    navigator: EpubNavigatorFragment,
+    format: BookFormat,
+    navigator: OverflowableNavigator,
     locator: Locator,
     onMessage: (String) -> Unit,
     onToggle: () -> Unit,
@@ -696,7 +781,7 @@ private fun ReaderControls(
                 Modifier.fillMaxWidth().padding(horizontal = Space.S),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                TextButton(onClick = { goChapter(-1) }) { Text("上一章") }
+                if (chapters.isNotEmpty()) TextButton(onClick = { goChapter(-1) }) { Text("上一章") }
                 Slider(
                     value = seeking ?: (locator.locations.totalProgression ?: 0.0).toFloat(),
                     onValueChange = {
@@ -719,7 +804,7 @@ private fun ReaderControls(
                     },
                     modifier = Modifier.weight(1f).padding(horizontal = Space.XS),
                 )
-                TextButton(onClick = { goChapter(1) }) { Text("下一章") }
+                if (chapters.isNotEmpty()) TextButton(onClick = { goChapter(1) }) { Text("下一章") }
             }
             Row(
                 Modifier.fillMaxWidth().padding(horizontal = Space.S, vertical = Space.XS),
@@ -738,7 +823,7 @@ private fun ReaderControls(
         }
     }
     if (showingSettings) {
-        ReaderSettingsDialog(viewModel, fonts, onDismiss = { showingSettings = false })
+        ReaderSettingsDialog(viewModel, format, fonts, onDismiss = { showingSettings = false })
     }
     if (showingSearch.value) {
         val search by viewModel.searchState.collectAsStateWithLifecycle()
@@ -747,7 +832,7 @@ private fun ReaderControls(
             onQueryChange = viewModel::setSearchQuery,
             onSearch = {
                 // A new search drops the previous hit's highlight from the page
-                scope.launch { navigator.applyDecorations(emptyList(), SEARCH_GROUP) }
+                scope.launch { (navigator as? DecorableNavigator)?.applyDecorations(emptyList(), SEARCH_GROUP) }
                 viewModel.search()
             },
             onOpen = { hit ->
@@ -755,7 +840,7 @@ private fun ReaderControls(
                     showingSearch.value = false
                     // Mark the hit on the page so it's easy to spot after the jump
                     scope.launch {
-                        navigator.applyDecorations(
+                        (navigator as? DecorableNavigator)?.applyDecorations(
                             listOf(Decoration("search", hit, Decoration.Style.Highlight(tint = SEARCH_HIGHLIGHT.toArgb()))),
                             SEARCH_GROUP,
                         )
@@ -770,6 +855,7 @@ private fun ReaderControls(
     if (showingNavigation) {
         ReaderNavigation(
             publication = publication,
+            format = format,
             navigator = navigator,
             bookmarks = book.bookmarks,
             onOpenBookmark = onOpen,

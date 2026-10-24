@@ -44,10 +44,11 @@ internal val FOOTER_HEIGHT = 26.dp
 
 /**
  * Thin status line under the page: battery, time and date on the left; chapter progress and book page on the right
- * Pages are Readium positions (fixed chunks of the book, the same numbers as in the contents), so they don't change with font size
+ * Pages are Readium positions (fixed chunks of the book, the same numbers as in the contents), so they don't change with font size;
+ * for a PDF or a comic they are its pages, and [chapterProgress] is off since there are no chapters to be part way through
  */
 @Composable
-internal fun ReaderFooter(publication: Publication, locator: Locator, background: Color, contentColor: Color) {
+internal fun ReaderFooter(publication: Publication, locator: Locator, background: Color, contentColor: Color, chapterProgress: Boolean) {
     val context = LocalContext.current
     val now = rememberMinuteClock()
     // Battery changes slowly; reading it with the clock once a minute is enough
@@ -56,7 +57,7 @@ internal fun ReaderFooter(publication: Publication, locator: Locator, background
     val total by produceState(0, publication) { value = publication.positions().size }
     val page = locator.locations.position
         ?: locator.locations.totalProgression?.takeIf { total > 0 }?.let { (it * total).roundToInt().coerceIn(1, total) }
-    val chapter = locator.locations.progression
+    val chapter = locator.locations.progression?.takeIf { chapterProgress }
 
     Row(
         Modifier.fillMaxWidth().height(FOOTER_HEIGHT).background(background).padding(horizontal = Space.L),

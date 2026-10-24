@@ -61,6 +61,7 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.compose.ui.window.DialogWindowProvider
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.bookreader.app.data.BookFormat
 import com.bookreader.app.data.Bookmark
 import com.bookreader.app.data.Highlight
 import com.bookreader.app.ui.components.Space
@@ -70,6 +71,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.first
 import org.json.JSONArray
 import org.json.JSONObject
+import org.readium.r2.navigator.VisualNavigator
 import org.readium.r2.navigator.epub.EpubNavigatorFragment
 import org.readium.r2.shared.ExperimentalReadiumApi
 import org.readium.r2.shared.publication.Link
@@ -80,12 +82,14 @@ import org.readium.r2.shared.publication.services.positionsByReadingOrder
 /**
  * Contents and bookmarks: a drawer sliding in from the left, about 60% of the screen wide, with the dimmed text visible on the right; tapping the text closes it
  * Hosted in a separate dialog because the reading area is Readium's View, outside the Compose layout
+ * Notes only exist for EPUB, where text can be selected
  */
 @OptIn(ExperimentalReadiumApi::class)
 @Composable
 internal fun ReaderNavigation(
     publication: Publication,
-    navigator: EpubNavigatorFragment,
+    format: BookFormat,
+    navigator: VisualNavigator,
     bookmarks: List<Bookmark>,
     onOpenBookmark: (Bookmark) -> Boolean,
     onRemoveBookmark: (Bookmark) -> Unit,
@@ -146,18 +150,23 @@ internal fun ReaderNavigation(
                     ) {
                         Column(Modifier.systemBarsPadding()) {
                             PrimaryTabRow(selectedTabIndex = selectedTab, containerColor = MaterialTheme.colorScheme.background) {
-                                listOf(AppIcons.List to "目录", AppIcons.Bookmark to "书签（${bookmarks.size}）", AppIcons.Note to "笔记（${highlights.size}）")
-                                    .forEachIndexed { index, (icon, label) ->
-                                        Tab(
-                                            selected = selectedTab == index,
-                                            onClick = { selectedTab = index },
-                                            icon = { Icon(icon, label) },
-                                            selectedContentColor = MaterialTheme.colorScheme.primary,
-                                            unselectedContentColor = secondary,
-                                        )
-                                    }
+                                listOfNotNull(
+                                    AppIcons.List to "目录",
+                                    AppIcons.Bookmark to "书签（${bookmarks.size}）",
+                                    (AppIcons.Note to "笔记（${highlights.size}）").takeIf { format == BookFormat.EPUB },
+                                ).forEachIndexed { index, (icon, label) ->
+                                    Tab(
+                                        selected = selectedTab == index,
+                                        onClick = { selectedTab = index },
+                                        icon = { Icon(icon, label) },
+                                        selectedContentColor = MaterialTheme.colorScheme.primary,
+                                        unselectedContentColor = secondary,
+                                    )
+                                }
                             }
-                            if (selectedTab == 0) {
+                            if (selectedTab == 0 && chapters.isEmpty()) {
+                                Text("这本书没有目录", Modifier.padding(Space.L), color = secondary)
+                            } else if (selectedTab == 0) {
                                 LazyColumn(Modifier.weight(1f), state = chapterList) {
                                     itemsIndexed(chapters) { index, (link, depth) ->
                                         val selected = index == currentChapter
@@ -218,7 +227,8 @@ internal fun ReaderNavigation(
                                             Column(Modifier.weight(1f)) {
                                                 Text(bookmark.title, maxLines = 2, overflow = TextOverflow.Ellipsis)
                                                 Text(
-                                                    "本章 ${ShelfFormat.percent(bookmark.progress)}",
+                                                    // A PDF / comic page has no chapter progress worth showing; its page number says where it is
+                                                    if (format == BookFormat.EPUB) "本章 ${ShelfFormat.percent(bookmark.progress)}" else bookmarkPage(bookmark),
                                                     fontSize = 12.sp,
                                                     color = secondary,
                                                 )
@@ -264,9 +274,21 @@ private fun HighlightRow(highlight: Highlight, onClick: () -> Unit, onRemove: ()
     }
 }
 
-/** Table of contents flattened into a list (chapter + depth); falls back to the reading order when there is no TOC */
+/**
+ * Table of contents flattened into a list (chapter + depth); an EPUB without one falls back to its reading order,
+ * but a comic's reading order is just its images, and a PDF's is the one file
+ */
 internal fun Publication.chapters(): List<Pair<Link, Int>> =
-    flattenContents(tableOfContents.ifEmpty { readingOrder })
+    flattenContents(tableOfContents.ifEmpty { if (conformsTo(Publication.Profile.EPUB)) readingOrder else emptyList() })
+
+/** "第 12 页" from the bookmark's position */
+private fun bookmarkPage(bookmark: Bookmark): String {
+    val page = runCatching { JSONObject(bookmark.locator).getJSONObject("locations").optInt("position") }.getOrDefault(0)
+    return if (page > 0) "第 $page 页" else ""
+}
+
+/** Page of a PDF contents entry, whose link points at file.pdf#page=N */
+private fun pdfPage(link: Link): Int? = link.url().fragment?.removePrefix("page=")?.toIntOrNull()
 
 private fun flattenContents(links: List<Link>, depth: Int = 0): List<Pair<Link, Int>> =
     links.flatMap { listOf(it to depth) + flattenContents(it.children, depth + 1) }
@@ -288,6 +310,7 @@ internal fun adjacentChapter(chapters: List<Pair<Link, Int>>, current: Int, step
 
 /** Start page of each chapter: the first position of the chapter's resource; chapters in the same resource share a page number */
 private suspend fun chapterPages(publication: Publication, chapters: List<Pair<Link, Int>>): List<Int?> {
+    if (publication.conformsTo(Publication.Profile.PDF)) return chapters.map { (link, _) -> pdfPage(link) }
     val positions = publication.positionsByReadingOrder()
     return chapters.map { (link, _) ->
         val href = link.url().removeFragment()
@@ -299,10 +322,15 @@ private suspend fun chapterPages(publication: Publication, chapters: List<Pair<L
 @OptIn(ExperimentalReadiumApi::class)
 internal suspend fun currentChapterIndex(
     publication: Publication,
-    navigator: EpubNavigatorFragment,
+    navigator: VisualNavigator,
     chapters: List<Pair<Link, Int>>,
     locator: Locator,
 ): Int {
+    // A PDF's contents are pages of the one file: the last entry starting at or before the current page
+    if (publication.conformsTo(Publication.Profile.PDF)) {
+        val page = locator.locations.position ?: return -1
+        return chapters.indices.lastOrNull { (pdfPage(chapters[it].first) ?: Int.MAX_VALUE) <= page } ?: -1
+    }
     val href = locator.href.removeFragment()
     val matches = chapters.indices.filter { chapters[it].first.url().removeFragment().isEquivalent(href) }
     val resourceIndex = publication.readingOrder.indexOfFirst { it.url().isEquivalent(href) }
@@ -312,14 +340,15 @@ internal suspend fun currentChapterIndex(
     if (matches.size < 2) return fallback
 
     // One XHTML file can contain several chapters, so compare anchor order with the first visible element.
+    val epub = navigator as? EpubNavigatorFragment ?: return fallback
     return try {
-        val selector = navigator.firstVisibleElementLocator()?.locations?.get("cssSelector") as? String
+        val selector = epub.firstVisibleElementLocator()?.locations?.get("cssSelector") as? String
             ?: return fallback
         val anchors = JSONArray(matches.map { index ->
             JSONObject().put("index", index).put("id", Uri.decode(chapters[index].first.url().toString().substringAfter('#', "")))
         })
         // When a page also holds the end of the previous chapter, prefer the chapter heading that is visible.
-        val result = navigator.evaluateJavascript("""
+        val result = epub.evaluateJavascript("""
             (() => {
                 const first = document.querySelector(${JSONObject.quote(selector)});
                 if (!first) return -1;

@@ -1,5 +1,6 @@
 package com.bookreader.app.data.opds
 
+import com.bookreader.app.data.BookFormat
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -62,6 +63,16 @@ class OpdsParserTest {
             <link rel="alternate" href="/opds/book/2" type="application/atom+xml;profile=opds-catalog"/>
           </entry>
           <entry>
+            <title>Comic</title>
+            <link rel="http://opds-spec.org/acquisition" href="/opds/download/4/pdf/" type="application/pdf"/>
+            <link rel="http://opds-spec.org/acquisition" href="/opds/download/4/cbz/" type="application/x-cbz"/>
+          </entry>
+          <entry>
+            <title>Only MOBI</title>
+            <link rel="http://opds-spec.org/acquisition" href="/opds/download/5/mobi/" type="application/x-mobipocket-ebook"/>
+            <link rel="alternate" href="/opds/book/5" type="application/atom+xml;profile=opds-catalog"/>
+          </entry>
+          <entry>
             <title>Two Authors</title>
             <author><name>A</name></author>
             <author><name>B</name></author>
@@ -96,16 +107,17 @@ class OpdsParserTest {
 
     @Test
     fun epubAcquisitionBecomesBook() {
-        val book = OpdsParser.parse(bookFeed, "$base/new").entries.first() as OpdsEntry.Epub
+        val book = OpdsParser.parse(bookFeed, "$base/new").entries.first() as OpdsEntry.Book
         assertEquals("三体", book.title)
         assertEquals("刘慈欣", book.author)
         assertEquals("http://192.168.1.100:8083/opds/download/1/epub/", book.downloadUrl)
+        assertEquals(BookFormat.EPUB, book.format)
         assertEquals(1024L, book.size)
     }
 
     @Test
     fun bookDetailsForModal() {
-        val book = OpdsParser.parse(bookFeed, "$base/new").entries.first() as OpdsEntry.Epub
+        val book = OpdsParser.parse(bookFeed, "$base/new").entries.first() as OpdsEntry.Book
         assertEquals("文化大革命如火如荼。\n\n第二段。", book.summary)
         assertEquals("http://192.168.1.100:8083/opds/cover/1", book.coverUrl)
         assertEquals("http://192.168.1.100:8083/opds/cover/1?size=small", book.thumbnailUrl)
@@ -117,7 +129,7 @@ class OpdsParserTest {
 
     @Test
     fun bookWithoutDetailsHasEmptyFields() {
-        val book = OpdsParser.parse(bookFeed, "$base/new").entries.last() as OpdsEntry.Epub
+        val book = OpdsParser.parse(bookFeed, "$base/new").entries.last() as OpdsEntry.Book
         assertEquals("", book.summary)
         assertNull(book.coverUrl)
         assertEquals(emptyList<String>(), book.tags)
@@ -125,14 +137,29 @@ class OpdsParserTest {
     }
 
     @Test
-    fun bookWithoutEpubIsSkippedNotTreatedAsFolder() {
+    fun bookWithoutEpubDownloadsAsPdf() {
+        val book = OpdsParser.parse(bookFeed, "$base/new").entries.first { it.title == "Only PDF" } as OpdsEntry.Book
+        assertEquals("http://192.168.1.100:8083/opds/download/2/pdf/", book.downloadUrl)
+        assertEquals(BookFormat.PDF, book.format)
+    }
+
+    @Test
+    fun comicPrefersCbzOverPdf() {
+        val book = OpdsParser.parse(bookFeed, "$base/new").entries.first { it.title == "Comic" } as OpdsEntry.Book
+        assertEquals("http://192.168.1.100:8083/opds/download/4/cbz/", book.downloadUrl)
+        assertEquals(BookFormat.CBZ, book.format)
+        assertEquals(listOf("PDF", "CBZ"), book.formats)
+    }
+
+    @Test
+    fun bookWithoutSupportedFormatIsSkippedNotTreatedAsFolder() {
         val titles = OpdsParser.parse(bookFeed, "$base/new").entries.map { it.title }
-        assertTrue("Only PDF" !in titles)
+        assertTrue("Only MOBI" !in titles)
     }
 
     @Test
     fun acquisitionSubRelAndMimeParamsAreAccepted() {
-        val book = OpdsParser.parse(bookFeed, "$base/new").entries.last() as OpdsEntry.Epub
+        val book = OpdsParser.parse(bookFeed, "$base/new").entries.last() as OpdsEntry.Book
         assertEquals("A, B", book.author)
         assertEquals("http://other.example/3.epub", book.downloadUrl)
         assertEquals(0L, book.size)

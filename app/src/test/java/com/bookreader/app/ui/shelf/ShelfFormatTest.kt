@@ -46,4 +46,10 @@ class ShelfFormatTest {
         assertEquals("83%", ShelfFormat.percent(0.8349))
         assertEquals("100%", ShelfFormat.percent(1.0))
     }
+
+    @Test
+    fun readingHoursAlone() {
+        assertEquals("0.97小时", ShelfFormat.readingHours(3492))
+        assertEquals("2小时", ShelfFormat.readingHours(7200))
+    }
 }

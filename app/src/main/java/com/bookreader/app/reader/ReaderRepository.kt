@@ -1,11 +1,11 @@
 package com.bookreader.app.reader
 
 import com.bookreader.app.data.Book
+import com.bookreader.app.data.BookFormat
 import com.bookreader.app.data.BookRepository
 import com.bookreader.app.data.FontRepository
 import com.bookreader.app.data.UserFont
 import org.json.JSONObject
-import org.readium.r2.navigator.epub.EpubNavigatorFactory
 import org.readium.r2.shared.publication.Locator
 import org.readium.r2.shared.publication.Publication
 import org.readium.r2.shared.util.AbsoluteUrl
@@ -27,13 +27,14 @@ class ReaderRepository(
     class Session(
         val book: Book,
         val publication: Publication,
-        val navigatorFactory: EpubNavigatorFactory,
         val initialLocator: Locator?,
         /** Imported fonts as of opening; fonts imported later show up the next time the book opens */
         val fonts: List<ServedFont>,
         /** Where the reader's pages load the publication's resources from */
         private val baseUrl: AbsoluteUrl,
     ) {
+        val format: BookFormat get() = book.format
+
         /** Bytes of the book resource a page loads from [url] (an image, say); null for anything outside the book */
         suspend fun read(url: AbsoluteUrl): ByteArray? {
             val href = baseUrl.relativize(url)
@@ -47,18 +48,28 @@ class ReaderRepository(
 
     suspend fun open(book: Book): Session {
         close(book.id)
-        val userFonts = fonts.fonts.value
+        // Imported fonts only apply to EPUB text
+        val userFonts = if (book.format == BookFormat.EPUB) fonts.fonts.value else emptyList()
         val files = userFonts.map { FontFile(Url.fromDecodedPath("$FONTS_DIR/${it.fileName}")!!, fonts.file(it)) }
         val publication = readium.open(books.file(book), files)
         // Same rule the navigator uses to serve publication resources: relative to the publication's base URL
         val base = publication.baseUrl ?: PACKAGE_BASE_URL
         val served = userFonts.zip(files) { font, file -> ServedFont(font, base.resolve(file.href)) }
         val locator = book.locator?.let { runCatching { Locator.fromJSON(JSONObject(it)) }.getOrNull() }
-        return Session(book, publication, EpubNavigatorFactory(publication), locator, served, base)
+        return Session(book, publication, locator, served, base)
             .also { sessions[book.id] = it }
     }
 
-    fun close(bookId: String) {
+    /**
+     * Closes the reader's own [session]. When the book was reopened right away, the old reader is destroyed after
+     * the new session replaced (and closed) this one, so the new session stays open
+     */
+    fun close(session: Session) {
+        if (sessions[session.book.id] !== session) return
+        close(session.book.id)
+    }
+
+    private fun close(bookId: String) {
         sessions.remove(bookId)?.publication?.close()
     }
 

@@ -37,11 +37,11 @@ data class OpdsUiState(
     val downloading: Set<String> = emptySet(),
     val message: String? = null,
     /** Book shown in the details dialog */
-    val selected: OpdsEntry.Epub? = null,
+    val selected: OpdsEntry.Book? = null,
 )
 
 /**
- * Calibre library browser: keeps a stack of visited folders and downloads epubs to the shelf
+ * Calibre library browser: keeps a stack of visited folders and downloads books (EPUB / PDF / CBZ) to the shelf
  */
 class OpdsViewModel(
     private val libraries: LibraryRepository,
@@ -92,14 +92,14 @@ class OpdsViewModel(
         return true
     }
 
-    fun download(epub: OpdsEntry.Epub) {
-        val url = epub.downloadUrl
+    fun download(entry: OpdsEntry.Book) {
+        val url = entry.downloadUrl
         val library = library ?: return
         if (books.hasSource(url) || url in _state.value.downloading) return
         _state.update { it.copy(downloading = it.downloading + url) }
         viewModelScope.launch {
             try {
-                val book = opds.download(library, url) { books.import(it, epub.title, source = url) }
+                val book = opds.download(library, url) { books.import(it, entry.title, source = url) }
                 _state.update { it.copy(message = "已加入书架：${book.title}") }
             } catch (e: CancellationException) {
                 throw e
@@ -120,8 +120,8 @@ class OpdsViewModel(
     private var lastOpenAt = 0L
 
     /** A downloaded book: open the shelf copy in the reader */
-    fun read(epub: OpdsEntry.Epub) {
-        val book = books.books.value.firstOrNull { it.source == epub.downloadUrl } ?: return
+    fun read(entry: OpdsEntry.Book) {
+        val book = books.books.value.firstOrNull { it.source == entry.downloadUrl } ?: return
         val now = SystemClock.elapsedRealtime()
         if (opening || now - lastOpenAt < OPEN_DEBOUNCE_MS) return
         opening = true
@@ -143,7 +143,7 @@ class OpdsViewModel(
 
     fun clearMessage() = _state.update { it.copy(message = null) }
 
-    fun select(epub: OpdsEntry.Epub) = _state.update { it.copy(selected = epub) }
+    fun select(entry: OpdsEntry.Book) = _state.update { it.copy(selected = entry) }
 
     fun dismissDetail() = _state.update { it.copy(selected = null) }
 

@@ -2,7 +2,6 @@ package com.bookreader.app.ui.me
 
 import android.content.ContentResolver
 import android.net.Uri
-import android.provider.OpenableColumns
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -48,6 +47,7 @@ import com.bookreader.app.data.FontRepository
 import com.bookreader.app.data.ReadingStyle
 import com.bookreader.app.data.SettingsRepository
 import com.bookreader.app.data.UserFont
+import com.bookreader.app.data.displayName
 import com.bookreader.app.ui.components.BackHeader
 import com.bookreader.app.ui.components.Gap
 import com.bookreader.app.ui.components.PagePadding
@@ -241,14 +241,8 @@ class ReadingStyleViewModel(
     }
 
     /** File name without extension, e.g. 方正书宋_GBK.ttf → 方正书宋_GBK */
-    private fun displayName(uri: Uri): String {
-        val name = runCatching {
-            resolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { cursor ->
-                if (cursor.moveToFirst()) cursor.getString(0) else null
-            }
-        }.getOrNull() ?: uri.lastPathSegment?.substringAfterLast('/')
-        return name.orEmpty().substringBeforeLast('.')
-    }
+    private fun displayName(uri: Uri): String =
+        (resolver.displayName(uri) ?: uri.lastPathSegment?.substringAfterLast('/')).orEmpty().substringBeforeLast('.')
 
     companion object {
         val Factory = viewModelFactory {

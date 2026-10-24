@@ -69,6 +69,7 @@ dependencies {
     implementation(libs.readium.shared)
     implementation(libs.readium.streamer)
     implementation(libs.readium.navigator)
+    implementation(libs.readium.adapter.pdfium)
 
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.appcompat)

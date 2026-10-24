@@ -78,6 +78,19 @@ class ReaderViewModel(
 
     fun setLastHighlight(kind: HighlightKind, color: Int) = settings.setLastHighlight(kind, color)
 
+    /** Page turn direction of this PDF / comic: right to left for Japanese manga */
+    fun setRightToLeft(on: Boolean) {
+        viewModelScope.launch {
+            try {
+                books.setRightToLeft(bookId, on)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                _messages.send("保存翻页方向失败：${e.message.orEmpty()}")
+            }
+        }
+    }
+
     fun setSearchQuery(query: String) {
         _searchState.update { it.copy(query = query) }
     }
@@ -124,7 +137,7 @@ class ReaderViewModel(
 
     fun close() {
         searchJob?.cancel()
-        reader.close(bookId)
+        session?.let(reader::close)
     }
 
     /** Reads the image a page loads from [src] out of the book, decoded at about [width] × [height], and shows it full screen */
