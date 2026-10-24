@@ -10,6 +10,7 @@ import android.os.Bundle
 import android.os.SystemClock
 import android.view.Gravity
 import android.view.ActionMode
+import android.view.HapticFeedbackConstants
 import android.view.KeyEvent
 import android.view.Menu
 import android.view.MenuItem
@@ -84,6 +85,7 @@ import com.bookreader.app.ui.theme.BookReaderTheme
 import com.bookreader.app.ui.theme.isDark
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
@@ -177,6 +179,7 @@ class ReaderActivity : AppCompatActivity(), EpubNavigatorFragment.Listener {
             configuration = EpubNavigatorFragment.Configuration {
                 decorationTemplates = highlightTemplates()
                 selectionActionModeCallback = selectionCallback
+                registerJavascriptInterface(IMAGE_BRIDGE) { ImageLongPressBridge { src -> runOnUiThread { openImage(src) } } }
                 // Imported fonts, each served as a resource of the publication (see ReaderRepository)
                 session.fonts.forEach { served ->
                     addFontFamilyDeclaration(FontFamily(served.font.family)) {
@@ -344,6 +347,8 @@ class ReaderActivity : AppCompatActivity(), EpubNavigatorFragment.Listener {
                         onDismiss = { editingNote.value = null },
                     )
                 }
+                val image by viewModel.viewingImage.collectAsStateWithLifecycle()
+                image?.let { ImageViewer(it, onDismiss = viewModel::closeImage) }
             }
         }
         footer.setContent {
@@ -360,7 +365,7 @@ class ReaderActivity : AppCompatActivity(), EpubNavigatorFragment.Listener {
         controls.setContent {
             val topInset = with(LocalDensity.current) { headerInset.intValue.toDp() }
             ReaderTheme {
-                ReaderHeader(session.book.title, topInset, onBack = ::finish)
+                ReaderHeader(session.book.title, topInset, onBack = ::finish, onSearch = { showingSearch.value = true })
             }
         }
         bottomControls.setContent {
@@ -400,6 +405,8 @@ class ReaderActivity : AppCompatActivity(), EpubNavigatorFragment.Listener {
             repeatOnLifecycle(Lifecycle.State.STARTED) {
                 launch { viewModel.messages.collect(::showMessage) }
                 launch { navigator.currentLocator.collect { viewModel.saveProgress(it) } }
+                // Long press on illustrations: the script goes into whichever document is showing (it skips documents that already have it)
+                launch { navigator.currentLocator.collectLatest { navigator.evaluateJavascript(IMAGE_LONG_PRESS_SCRIPT) } }
                 // Saved highlights drawn on the page; Readium only redraws what changed
                 launch {
                     viewModel.book
@@ -477,6 +484,14 @@ class ReaderActivity : AppCompatActivity(), EpubNavigatorFragment.Listener {
         selectionWatch?.cancel()
         markTarget.value = null
         navigator.clearSelection()
+    }
+
+    /** A long-pressed illustration, shown full screen at about the screen's size */
+    private fun openImage(src: String) {
+        window.decorView.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
+        closeMarkMenu()
+        val screen = resources.displayMetrics
+        viewModel.openImage(src, screen.widthPixels, screen.heightPixels)
     }
 
     override fun onKeyDown(keyCode: Int, event: KeyEvent): Boolean {
@@ -569,7 +584,7 @@ class ReaderActivity : AppCompatActivity(), EpubNavigatorFragment.Listener {
 }
 
 @Composable
-private fun ReaderHeader(title: String, topInset: Dp, onBack: () -> Unit) {
+private fun ReaderHeader(title: String, topInset: Dp, onBack: () -> Unit, onSearch: () -> Unit) {
     Surface(color = MaterialTheme.colorScheme.background) {
         // When the status bar overlays the top bar, the bar's background extends under it and the content moves down
         Column(Modifier.padding(top = topInset)) {
@@ -586,6 +601,7 @@ private fun ReaderHeader(title: String, topInset: Dp, onBack: () -> Unit) {
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.weight(1f).padding(horizontal = Space.S),
                 )
+                IconButton(onClick = onSearch) { Icon(AppIcons.Search, "搜索") }
             }
             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
         }
@@ -623,7 +639,10 @@ private fun readerPreferences(dark: Boolean, style: ReadingStyle) = EpubPreferen
     publisherStyles = !style.overridesPublisherStyles,
 )
 
-/** Bottom menu: previous chapter / whole-book progress slider / next chapter, with contents, bookmarks, search and reading settings below */
+/**
+ * Bottom menu: previous chapter / whole-book progress slider / next chapter, with contents, bookmarks and reading settings below;
+ * also hosts the search dialog, opened from the top bar or the selection menu
+ */
 @Composable
 private fun ReaderControls(
     book: Book,
@@ -714,7 +733,6 @@ private fun ReaderControls(
                         if (bookmarked) "移除当前书签" else "添加书签",
                     )
                 }
-                IconButton(onClick = { showingSearch.value = true }) { Icon(AppIcons.Search, "搜索") }
                 IconButton(onClick = { showingSettings = true }) { Icon(AppIcons.Settings, "阅读设置") }
             }
         }

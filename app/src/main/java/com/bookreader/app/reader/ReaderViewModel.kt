@@ -1,5 +1,7 @@
 package com.bookreader.app.reader
 
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider.AndroidViewModelFactory.Companion.APPLICATION_KEY
 import androidx.lifecycle.viewModelScope
@@ -14,7 +16,9 @@ import com.bookreader.app.data.ReadingStyle
 import com.bookreader.app.data.SettingsRepository
 import com.bookreader.app.data.StatsRepository
 import com.bookreader.app.data.bookmarkId
+import com.bookreader.app.data.decodeScaledBitmap
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -26,9 +30,11 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import org.readium.r2.shared.ExperimentalReadiumApi
 import org.readium.r2.shared.publication.Locator
 import org.readium.r2.shared.publication.services.search.search
+import org.readium.r2.shared.util.AbsoluteUrl
 import org.readium.r2.shared.util.getOrElse
 import java.util.UUID
 
@@ -57,6 +63,10 @@ class ReaderViewModel(
     private val _searchState = MutableStateFlow(ReaderSearchState())
     internal val searchState = _searchState.asStateFlow()
     private var searchJob: Job? = null
+
+    /** Long-pressed illustration shown full screen */
+    private val _viewingImage = MutableStateFlow<ImageBitmap?>(null)
+    val viewingImage = _viewingImage.asStateFlow()
 
     fun setReadingStyle(style: ReadingStyle) = settings.setReadingStyle(style)
 
@@ -115,6 +125,22 @@ class ReaderViewModel(
     fun close() {
         searchJob?.cancel()
         reader.close(bookId)
+    }
+
+    /** Reads the image a page loads from [src] out of the book, decoded at about [width] × [height], and shows it full screen */
+    fun openImage(src: String, width: Int, height: Int) {
+        val session = session ?: return
+        val url = AbsoluteUrl(src) ?: return
+        viewModelScope.launch {
+            val bitmap = withContext(Dispatchers.IO) {
+                session.read(url)?.let { decodeScaledBitmap(it, width, height) }
+            }
+            if (bitmap != null) _viewingImage.value = bitmap.asImageBitmap() else _messages.send("无法打开图片")
+        }
+    }
+
+    fun closeImage() {
+        _viewingImage.value = null
     }
 
     fun toggleBookmark(locator: Locator) {
