@@ -169,7 +169,7 @@
     <string name="left_to_right">Left to right</string>
     <string name="right_to_left">Right to left</string>
     <string name="book_only">Applies only to this book</string>
-    <string name="default">Default</string>
+    <string name="default_value">Default</string>
     <string name="page_animation">Page animation</string>
     <string name="volume_key_paging">Turn pages with volume keys</string>
     <string name="volume_key_hint">Volume down = next page; volume up = previous page</string>

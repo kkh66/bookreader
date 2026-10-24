@@ -169,7 +169,7 @@
     <string name="left_to_right">普通（从左往右）</string>
     <string name="right_to_left">日式（从右往左）</string>
     <string name="book_only">只对这本书生效</string>
-    <string name="default">默认</string>
+    <string name="default_value">默认</string>
     <string name="page_animation">翻页动画</string>
     <string name="volume_key_paging">音量键翻页</string>
     <string name="volume_key_hint">音量下 = 下一页，音量上 = 上一页</string>

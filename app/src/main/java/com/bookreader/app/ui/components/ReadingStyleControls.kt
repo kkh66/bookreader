@@ -144,7 +144,7 @@ private fun StyleSlider(
             modifier = Modifier.weight(1f),
         )
         Text(
-            shown?.let { label(snap(it, range, step)) } ?: context.getString(R.string.default),
+            shown?.let { label(snap(it, range, step)) } ?: context.getString(R.string.default_value),
             fontSize = 13.sp,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             textAlign = TextAlign.End,
