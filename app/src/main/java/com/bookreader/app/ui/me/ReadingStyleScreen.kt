@@ -235,10 +235,16 @@ class ReadingStyleViewModel(
 
     fun remove(font: UserFont) {
         viewModelScope.launch {
-            fontRepository.remove(font)
-            // A deleted font can't be shown any more; fall back to the book's own fonts
-            val style = settings.readingStyle.value
-            if (style.fontFamily == font.family) settings.setReadingStyle(style.copy(fontFamily = null))
+            try {
+                fontRepository.remove(font)
+                // A deleted font can't be shown any more; fall back to the book's own fonts
+                val style = settings.readingStyle.value
+                if (style.fontFamily == font.family) settings.setReadingStyle(style.copy(fontFamily = null))
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                _message.value = "删除字体失败：${e.message.orEmpty()}"
+            }
         }
     }
 

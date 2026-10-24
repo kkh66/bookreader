@@ -400,15 +400,15 @@ class ReaderViewModel(
         lastHighlight.value.let { (kind, color) -> createHighlight(locator, kind, color) }
 
     private fun saveHighlight(highlight: Highlight) {
-        viewModelScope.launch { runCatching { books.saveHighlight(bookId, highlight) } }
+        launchCatching("保存高亮失败") { books.saveHighlight(bookId, highlight) }
     }
 
     fun removeHighlight(highlightId: String) {
-        viewModelScope.launch { books.removeHighlight(bookId, highlightId) }
+        launchCatching("删除高亮失败") { books.removeHighlight(bookId, highlightId) }
     }
 
     private fun saveProgress(locator: Locator) {
-        viewModelScope.launch {
+        launchCatching("保存阅读进度失败") {
             books.updateProgress(
                 id = bookId,
                 locator = locator.toJSON().toString(),
@@ -420,7 +420,19 @@ class ReaderViewModel(
 
     /** Records a reading session, capped at 2 hours so a screen left on doesn't inflate the stats */
     fun addReadingTime(seconds: Long) {
-        viewModelScope.launch { stats.add(bookId, seconds.coerceAtMost(MAX_SESSION_SECONDS)) }
+        launchCatching("保存阅读时长失败") { stats.add(bookId, seconds.coerceAtMost(MAX_SESSION_SECONDS)) }
+    }
+
+    private fun launchCatching(message: String, block: suspend () -> Unit) {
+        viewModelScope.launch {
+            try {
+                block()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                _messages.send("$message：${e.message.orEmpty()}")
+            }
+        }
     }
 
     /** Page of a bookmark in a PDF or comic; null in an EPUB, where its chapter progress says where it is */

@@ -201,6 +201,11 @@ class ReaderActivity : AppCompatActivity(), EpubNavigatorFragment.Listener {
                 initialLocator = session.initialLocator,
                 initialPreferences = readerPreferences(dark, viewModel.readingStyle.value),
                 listener = this,
+                paginationListener = object : EpubNavigatorFragment.PaginationListener {
+                    override fun onPageLoaded() {
+                        lifecycleScope.launch { epubNavigator?.evaluateJavascript(IMAGE_LONG_PRESS_SCRIPT) }
+                    }
+                },
                 configuration = EpubNavigatorFragment.Configuration {
                     decorationTemplates = highlightTemplates()
                     selectionActionModeCallback = selectionCallback

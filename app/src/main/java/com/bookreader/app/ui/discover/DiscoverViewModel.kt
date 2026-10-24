@@ -8,6 +8,9 @@ import androidx.lifecycle.viewmodel.viewModelFactory
 import com.bookreader.app.container
 import com.bookreader.app.data.LibraryRepository
 import com.bookreader.app.data.SettingsRepository
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
 /**
@@ -21,10 +24,25 @@ class DiscoverViewModel(
     val items = libraries.libraries
     val grid = settings.libraryGrid
 
+    private val _message = MutableStateFlow<String?>(null)
+    val message = _message.asStateFlow()
+
+    fun clearMessage() {
+        _message.value = null
+    }
+
     fun setGrid(grid: Boolean) = settings.setLibraryGrid(grid)
 
     fun delete(id: String) {
-        viewModelScope.launch { libraries.delete(id) }
+        viewModelScope.launch {
+            try {
+                libraries.delete(id)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                _message.value = "删除书库失败：${e.message.orEmpty()}"
+            }
+        }
     }
 
     companion object {

@@ -24,6 +24,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -40,6 +41,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.bookreader.app.ui.components.Gap
 import com.bookreader.app.ui.components.Space
 import com.bookreader.app.ui.theme.AppIcons
@@ -55,6 +57,8 @@ fun LibraryEditScreen(
     onSaved: () -> Unit = onDone,
     viewModel: LibraryEditViewModel = viewModel(factory = LibraryEditViewModel.Factory),
 ) {
+    val error by viewModel.error.collectAsStateWithLifecycle()
+    LaunchedEffect(libraryId) { viewModel.clearError() }
     val saved = viewModel.load(libraryId)
     // An old address that can't be split goes into the address field as is, and the hint guides the fix
     val initial = saved?.url?.let { OpdsAddress.parse(it) ?: OpdsAddress(host = it) } ?: OpdsAddress()
@@ -200,6 +204,7 @@ fun LibraryEditScreen(
                         modifier = Modifier.fillMaxWidth(),
                     )
                 }
+                error?.let { Text(it, color = MaterialTheme.colorScheme.error, fontSize = 13.sp) }
                 Gap(Space.XL)
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(Space.S, Alignment.End)) {
                     TextButton(onClick = onDone) { Text("取消", fontSize = 16.sp) }
