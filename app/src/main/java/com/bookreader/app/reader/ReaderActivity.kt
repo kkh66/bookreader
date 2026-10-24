@@ -709,6 +709,7 @@ private fun pdfPreferences(rightToLeft: Boolean) =
 private fun pageDirection(rightToLeft: Boolean) = if (rightToLeft) View.LAYOUT_DIRECTION_RTL else View.LAYOUT_DIRECTION_LTR
 
 /** EPUB page appearance: light / dark colors plus the user's text style */
+@OptIn(ExperimentalReadiumApi::class)
 private fun readerPreferences(dark: Boolean, style: ReadingStyle) = EpubPreferences(
     theme = if (dark) Theme.DARK else Theme.LIGHT,
     backgroundColor = ReadiumColor(pageBackground(dark)),
@@ -727,6 +728,7 @@ private fun readerPreferences(dark: Boolean, style: ReadingStyle) = EpubPreferen
  * also hosts the search dialog, opened from the top bar or the selection menu
  * A book without contents (a comic) has no chapter buttons
  */
+@OptIn(ExperimentalReadiumApi::class)
 @Composable
 private fun ReaderControls(
     book: Book,
