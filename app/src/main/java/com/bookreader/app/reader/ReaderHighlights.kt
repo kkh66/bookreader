@@ -131,12 +131,15 @@ internal fun highlightTemplates(): HtmlDecorationTemplates = HtmlDecorationTempl
     )
 }
 
-/** Inline SVG of one wave period in [tint], tiled along the bottom of each line */
-private fun wavySvg(@ColorInt tint: Int): String {
+/**
+ * Inline SVG of one wave period in [tint], tiled along the bottom of each line
+ * The brackets are percent-encoded: most EPUB pages are XHTML, where a raw `<` in the style attribute makes the whole template invalid XML and Readium drops it
+ */
+internal fun wavySvg(@ColorInt tint: Int): String {
     val hex = "%06X".format(tint and 0xFFFFFF)
     return "data:image/svg+xml;utf8," +
-        "<svg xmlns='http://www.w3.org/2000/svg' width='8' height='4'>" +
-        "<path d='M0 3 Q2 0 4 3 T8 3' fill='none' stroke='%23$hex' stroke-width='1.2'/></svg>"
+        "%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='4'%3E" +
+        "%3Cpath d='M0 3 Q2 0 4 3 T8 3' fill='none' stroke='%23$hex' stroke-width='1.2'/%3E%3C/svg%3E"
 }
 
 /** What the popup menu acts on: a fresh text selection, or a highlight that was tapped */
