@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -22,32 +23,34 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.bookreader.app.R
 import com.bookreader.app.data.DayStat
-import com.bookreader.app.ui.shelf.ShelfFormat
-import com.bookreader.app.ui.components.ProgressLine
-import com.bookreader.app.ui.components.COVER_RATIO
 import com.bookreader.app.ui.components.BookCover
-import androidx.compose.foundation.layout.aspectRatio
+import com.bookreader.app.ui.components.COVER_RATIO
 import com.bookreader.app.ui.components.Gap
 import com.bookreader.app.ui.components.PageHeader
 import com.bookreader.app.ui.components.PagePadding
+import com.bookreader.app.ui.components.ProgressLine
 import com.bookreader.app.ui.components.Space
 import com.bookreader.app.ui.components.SurfaceCard
+import com.bookreader.app.ui.shelf.ShelfFormat
 import java.time.LocalDate
 
 @Composable
 fun StatsScreen(viewModel: StatsViewModel = viewModel(factory = StatsViewModel.Factory)) {
+    val context = LocalContext.current
     val state by viewModel.state.collectAsStateWithLifecycle()
     val summary = state.summary
 
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
-        PageHeader("阅读统计")
+        PageHeader(context.getString(R.string.reading_stats))
         Column(
             Modifier.padding(horizontal = PagePadding, vertical = Space.L),
             verticalArrangement = Arrangement.spacedBy(Space.L),
@@ -56,21 +59,21 @@ fun StatsScreen(viewModel: StatsViewModel = viewModel(factory = StatsViewModel.F
             SurfaceCard {
                 Column(Modifier.padding(horizontal = Space.XL, vertical = Space.S)) {
                     Row {
-                        Metric("累计阅读", duration(summary.totalSeconds))
-                        Metric("阅读书籍", "${summary.bookCount} 本")
+                        Metric(context.getString(R.string.total_reading), duration(summary.totalSeconds))
+                        Metric(context.getString(R.string.books_read), context.getString(R.string.book_count, summary.bookCount))
                     }
                     HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                     Row {
-                        Metric("近 7 天", duration(summary.last7Seconds))
-                        Metric("连续阅读", "${summary.streakDays} 天")
+                        Metric(context.getString(R.string.last_seven_days), duration(summary.last7Seconds))
+                        Metric(context.getString(R.string.reading_streak), context.getString(R.string.day_count, summary.streakDays))
                     }
                 }
             }
             SurfaceCard {
                 Column(Modifier.padding(Space.XL)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text("最近 7 天", fontSize = 18.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
-                        Text("每日阅读时长", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text(context.getString(R.string.recent_seven_days), fontSize = 18.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                        Text(context.getString(R.string.daily_reading_time), fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                     Gap(Space.L)
                     WeekChart(summary.last7, state.today)
@@ -79,7 +82,7 @@ fun StatsScreen(viewModel: StatsViewModel = viewModel(factory = StatsViewModel.F
             if (state.history.isNotEmpty()) {
                 SurfaceCard {
                     Column(Modifier.padding(Space.XL)) {
-                        Text("阅读记录", fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                        Text(context.getString(R.string.reading_history), fontSize = 18.sp, fontWeight = FontWeight.Bold)
                         Gap(Space.S)
                         state.history.forEach { RecordRow(it) }
                     }
@@ -111,20 +114,21 @@ private fun RecordRow(item: BookTime) {
 
 @Composable
 private fun TodayCard(seconds: Long, today: LocalDate) {
+    val context = LocalContext.current
     val ink = MaterialTheme.colorScheme.inverseOnSurface
     Column(
         Modifier.fillMaxWidth().clip(RoundedCornerShape(24.dp))
             .background(MaterialTheme.colorScheme.inverseSurface).padding(Space.XL),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text("今日阅读", fontSize = 16.sp, color = ink.copy(alpha = 0.7f), modifier = Modifier.weight(1f))
-            Text("${today.monthValue}月${today.dayOfMonth}日", fontSize = 14.sp, color = ink.copy(alpha = 0.7f))
+            Text(context.getString(R.string.reading_today), fontSize = 16.sp, color = ink.copy(alpha = 0.7f), modifier = Modifier.weight(1f))
+            Text(context.getString(R.string.month_day, today.monthValue, today.dayOfMonth), fontSize = 14.sp, color = ink.copy(alpha = 0.7f))
         }
         Gap(Space.L)
         Text(todayText(seconds), fontSize = 46.sp, fontWeight = FontWeight.Bold, color = ink)
         Gap(Space.M)
         Text(
-            if (seconds > 0) "已记录今天的阅读时长" else "今天还没开始读",
+            if (seconds > 0) context.getString(R.string.today_recorded) else context.getString(R.string.today_unread),
             fontSize = 14.sp,
             color = ink.copy(alpha = 0.7f),
         )
@@ -142,6 +146,7 @@ private fun androidx.compose.foundation.layout.RowScope.Metric(label: String, va
 
 @Composable
 private fun WeekChart(days: List<DayStat>, today: LocalDate) {
+    val context = LocalContext.current
     val max = days.maxOf { it.seconds }.coerceAtLeast(1)
     Row(Modifier.fillMaxWidth().height(170.dp), verticalAlignment = Alignment.Bottom) {
         days.forEach { day ->
@@ -149,7 +154,7 @@ private fun WeekChart(days: List<DayStat>, today: LocalDate) {
             val minutes = displayMinutes(day.seconds)
             Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
                 Text(
-                    if (minutes > 0) "${minutes}分" else "0",
+                    if (minutes > 0) context.getString(R.string.minutes_short, minutes) else "0",
                     fontSize = 12.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -179,17 +184,21 @@ private fun ColumnScope.Bar(fraction: Float, highlight: Boolean) {
     Box(Modifier.width(26.dp).height(height.dp).clip(RoundedCornerShape(6.dp)).background(color))
 }
 
-private fun weekday(date: LocalDate) = "周" + "一二三四五六日"[date.dayOfWeek.value - 1]
+private fun weekday(date: LocalDate) = date.dayOfWeek.getDisplayName(java.time.format.TextStyle.SHORT, java.util.Locale.getDefault())
 
 /** Today's big number: under an hour it shows "21分钟" (21 minutes) */
+@Composable
 private fun todayText(seconds: Long): String {
+    val context = LocalContext.current
     val minutes = displayMinutes(seconds)
-    return if (minutes < 60) "${minutes}分钟" else "${minutes / 60}时${minutes % 60}分"
+    return if (minutes < 60) context.getString(R.string.minutes_long, minutes) else context.getString(R.string.hours_minutes, minutes / 60, minutes % 60)
 }
 
+@Composable
 private fun duration(seconds: Long): String {
+    val context = LocalContext.current
     val minutes = displayMinutes(seconds)
-    return if (minutes < 60) "${minutes}分" else "${minutes / 60}时${minutes % 60}分"
+    return if (minutes < 60) context.getString(R.string.minutes_short, minutes) else context.getString(R.string.hours_minutes, minutes / 60, minutes % 60)
 }
 
 /** Show at least 1 minute even when under a minute, so the UI never says "0分钟" (0 minutes) next to "已记录" (recorded) */

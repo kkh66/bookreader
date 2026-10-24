@@ -23,6 +23,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.window.Dialog
@@ -31,6 +32,7 @@ import androidx.compose.ui.window.DialogWindowProvider
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
+import com.bookreader.app.R
 import kotlin.math.max
 import kotlin.math.min
 
@@ -80,6 +82,7 @@ private const val MAX_SCALE = 5f
  */
 @Composable
 internal fun ImageViewer(image: ImageBitmap, onDismiss: () -> Unit) {
+    val context = LocalContext.current
     Dialog(
         onDismissRequest = onDismiss,
         properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false),
@@ -135,7 +138,7 @@ internal fun ImageViewer(image: ImageBitmap, onDismiss: () -> Unit) {
         ) {
             Image(
                 image,
-                contentDescription = "插图",
+                contentDescription = context.getString(R.string.illustration),
                 modifier = Modifier.fillMaxSize().graphicsLayer {
                     scaleX = scale
                     scaleY = scale

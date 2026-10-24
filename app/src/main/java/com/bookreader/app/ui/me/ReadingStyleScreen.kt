@@ -1,6 +1,7 @@
 package com.bookreader.app.ui.me
 
 import android.content.ContentResolver
+import android.content.Context
 import android.net.Uri
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -32,9 +33,11 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider.AndroidViewModelFactory.Companion.APPLICATION_KEY
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -42,6 +45,7 @@ import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
+import com.bookreader.app.R
 import com.bookreader.app.container
 import com.bookreader.app.data.FontRepository
 import com.bookreader.app.data.PageAnimation
@@ -57,11 +61,11 @@ import com.bookreader.app.ui.components.ReadingStyleControls
 import com.bookreader.app.ui.components.SectionTitle
 import com.bookreader.app.ui.components.Space
 import com.bookreader.app.ui.components.SurfaceCard
+import java.io.IOException
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
-import java.io.IOException
 
 /**
  * Me → 阅读样式: default text style for every book, plus importing and removing fonts
@@ -72,6 +76,7 @@ fun ReadingStyleScreen(
     onExit: () -> Unit,
     viewModel: ReadingStyleViewModel = viewModel(factory = ReadingStyleViewModel.Factory),
 ) {
+    val context = LocalContext.current
     val style by viewModel.style.collectAsStateWithLifecycle()
     val fonts by viewModel.fonts.collectAsStateWithLifecycle()
     val importing by viewModel.importing.collectAsStateWithLifecycle()
@@ -98,21 +103,21 @@ fun ReadingStyleScreen(
 
     Box(Modifier.fillMaxSize()) {
         Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
-            BackHeader("阅读样式", onBack = onExit)
+            BackHeader(context.getString(R.string.reading_style), onBack = onExit)
             Column(Modifier.padding(horizontal = PagePadding, vertical = Space.M)) {
-                SectionTitle("排版", Modifier.padding(start = Space.XS, bottom = Space.M))
+                SectionTitle(context.getString(R.string.typography), Modifier.padding(start = Space.XS, bottom = Space.M))
                 SurfaceCard {
                     Column(Modifier.padding(Space.L)) {
                         ReadingStyleControls(style, fonts, onChange = viewModel::setStyle)
                     }
                 }
                 Text(
-                    "在阅读页底部的设置里调整，可以边看正文边改",
+                    context.getString(R.string.typography_hint),
                     fontSize = 13.sp, color = secondary,
                     modifier = Modifier.padding(start = Space.XS, top = Space.S),
                 )
                 Gap(Space.XL)
-                SectionTitle("阅读行为", Modifier.padding(start = Space.XS, bottom = Space.M))
+                SectionTitle(context.getString(R.string.reading_behavior), Modifier.padding(start = Space.XS, bottom = Space.M))
                 SurfaceCard {
                     Column(Modifier.padding(horizontal = Space.L, vertical = Space.XS)) {
                         ReadingBehaviorControls(
@@ -124,12 +129,12 @@ fun ReadingStyleScreen(
                 }
                 Gap(Space.XL)
                 SectionTitle(
-                    "我的字体", Modifier.padding(start = Space.XS, bottom = Space.M),
-                    trailing = if (fonts.isEmpty()) null else "${fonts.size} 个",
+                    context.getString(R.string.my_fonts), Modifier.padding(start = Space.XS, bottom = Space.M),
+                    trailing = if (fonts.isEmpty()) null else context.getString(R.string.item_count, fonts.size),
                 )
                 SurfaceCard {
                     if (fonts.isEmpty()) {
-                        Text("还没有导入字体", fontSize = 15.sp, color = secondary, modifier = Modifier.padding(Space.L))
+                        Text(context.getString(R.string.no_fonts), fontSize = 15.sp, color = secondary, modifier = Modifier.padding(Space.L))
                     }
                     fonts.forEachIndexed { index, font ->
                         Row(
@@ -140,7 +145,7 @@ fun ReadingStyleScreen(
                                 font.name, fontSize = 16.sp, maxLines = 1, overflow = TextOverflow.Ellipsis,
                                 modifier = Modifier.weight(1f),
                             )
-                            TextButton(onClick = { pendingDelete = font }) { Text("删除") }
+                            TextButton(onClick = { pendingDelete = font }) { Text(context.getString(R.string.delete)) }
                         }
                         if (index != fonts.lastIndex) {
                             HorizontalDivider(Modifier.padding(horizontal = Space.L), color = MaterialTheme.colorScheme.outlineVariant)
@@ -157,11 +162,11 @@ fun ReadingStyleScreen(
                     if (importing) {
                         CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
                     } else {
-                        Text("导入字体（TTF / OTF / WOFF）")
+                        Text(context.getString(R.string.import_font))
                     }
                 }
                 Text(
-                    "字体保存在本机，只在这个应用里使用。新导入的字体，下次打开书时可以选用。",
+                    context.getString(R.string.font_import_hint),
                     fontSize = 13.sp, color = secondary,
                     modifier = Modifier.padding(start = Space.XS, top = Space.S),
                 )
@@ -174,15 +179,15 @@ fun ReadingStyleScreen(
     pendingDelete?.let { font ->
         AlertDialog(
             onDismissRequest = { pendingDelete = null },
-            title = { Text("删除字体「${font.name}」？") },
-            text = { Text("正在使用这个字体的话，会改回书籍默认字体") },
+            title = { Text(context.getString(R.string.delete_font_confirm, font.name)) },
+            text = { Text(context.getString(R.string.delete_font_hint)) },
             confirmButton = {
                 TextButton(onClick = {
                     viewModel.remove(font)
                     pendingDelete = null
-                }) { Text("删除") }
+                }) { Text(context.getString(R.string.delete)) }
             },
-            dismissButton = { TextButton(onClick = { pendingDelete = null }) { Text("取消") } },
+            dismissButton = { TextButton(onClick = { pendingDelete = null }) { Text(context.getString(R.string.cancel)) } },
         )
     }
 }
@@ -191,7 +196,10 @@ class ReadingStyleViewModel(
     private val settings: SettingsRepository,
     private val fontRepository: FontRepository,
     private val resolver: ContentResolver,
+    private val context: Context,
 ) : ViewModel() {
+    private val strings get() = ContextCompat.getContextForLanguage(context).resources
+
 
     val style = settings.readingStyle
     val fonts = fontRepository.fonts
@@ -220,9 +228,9 @@ class ReadingStyleViewModel(
         viewModelScope.launch {
             _importing.value = true
             try {
-                val input = resolver.openInputStream(uri) ?: throw IOException("无法读取文件")
+                val input = resolver.openInputStream(uri) ?: throw IOException(strings.getString(R.string.file_read_failed))
                 val font = fontRepository.import(input, displayName(uri))
-                _message.value = "已导入「${font.name}」"
+                _message.value = strings.getString(R.string.font_imported, font.name)
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
@@ -243,7 +251,7 @@ class ReadingStyleViewModel(
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                _message.value = "删除字体失败：${e.message.orEmpty()}"
+                _message.value = strings.getString(R.string.font_delete_failed, e.message.orEmpty())
             }
         }
     }
@@ -260,7 +268,7 @@ class ReadingStyleViewModel(
         val Factory = viewModelFactory {
             initializer {
                 val app = this[APPLICATION_KEY]!!
-                ReadingStyleViewModel(app.container.settings, app.container.fonts, app.contentResolver)
+                ReadingStyleViewModel(app.container.settings, app.container.fonts, app.contentResolver, app)
             }
         }
     }

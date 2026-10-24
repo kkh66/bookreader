@@ -8,8 +8,8 @@ import android.graphics.RectF
 import android.net.Uri
 import android.os.Bundle
 import android.os.SystemClock
-import android.view.Gravity
 import android.view.ActionMode
+import android.view.Gravity
 import android.view.HapticFeedbackConstants
 import android.view.KeyEvent
 import android.view.Menu
@@ -52,6 +52,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.ComposeView
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.ViewCompositionStrategy
 import androidx.compose.ui.text.font.FontWeight
@@ -78,6 +79,7 @@ import com.bookreader.app.ui.theme.AppIcons
 import com.bookreader.app.ui.theme.BookReaderTheme
 import com.bookreader.app.ui.theme.isDark
 import com.github.barteksc.pdfviewer.PDFView
+import kotlin.math.roundToInt
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
@@ -90,26 +92,25 @@ import org.json.JSONObject
 import org.readium.adapter.pdfium.navigator.PdfiumEngineProvider
 import org.readium.adapter.pdfium.navigator.PdfiumNavigatorFragment
 import org.readium.adapter.pdfium.navigator.PdfiumPreferences
-import org.readium.r2.navigator.Decoration
 import org.readium.r2.navigator.DecorableNavigator
+import org.readium.r2.navigator.Decoration
 import org.readium.r2.navigator.OverflowableNavigator
 import org.readium.r2.navigator.epub.EpubNavigatorFactory
 import org.readium.r2.navigator.epub.EpubNavigatorFragment
 import org.readium.r2.navigator.epub.EpubPreferences
 import org.readium.r2.navigator.image.ImageNavigatorFragment
-import org.readium.r2.navigator.pdf.PdfNavigatorFactory
-import org.readium.r2.navigator.pdf.PdfNavigatorFragment
 import org.readium.r2.navigator.input.InputListener
 import org.readium.r2.navigator.input.TapEvent
-import org.readium.r2.navigator.preferences.Theme
+import org.readium.r2.navigator.pdf.PdfNavigatorFactory
+import org.readium.r2.navigator.pdf.PdfNavigatorFragment
 import org.readium.r2.navigator.preferences.Color as ReadiumColor
 import org.readium.r2.navigator.preferences.FontFamily
 import org.readium.r2.navigator.preferences.ReadingProgression
+import org.readium.r2.navigator.preferences.Theme
 import org.readium.r2.navigator.util.DirectionalNavigationAdapter
 import org.readium.r2.shared.ExperimentalReadiumApi
 import org.readium.r2.shared.publication.Locator
 import org.readium.r2.shared.util.AbsoluteUrl
-import kotlin.math.roundToInt
 
 /**
  * Reader screen: hosts Readium's navigator for the book's format (EPUB, PDF via PDFium, or the image navigator for CBZ);
@@ -392,11 +393,11 @@ class ReaderActivity : AppCompatActivity(), EpubNavigatorFragment.Listener {
                             currentChapter = currentChapter,
                             onOpenChapter = ::openChapter,
                             bookmarks = bookmarks,
-                            onOpenBookmark = { goTo(it.locator, "无法跳转到此书签") },
+                            onOpenBookmark = { goTo(it.locator, getString(R.string.bookmark_jump_failed)) },
                             onRemoveBookmark = { viewModel.removeBookmark(it.id) },
                             // Notes come from selecting text, which only EPUB has
                             highlights = book?.highlights?.takeIf { viewModel.format == BookFormat.EPUB },
-                            onOpenHighlight = { goTo(it.locator, "无法跳转到此笔记") },
+                            onOpenHighlight = { goTo(it.locator, getString(R.string.note_jump_failed)) },
                             onRemoveHighlight = { viewModel.removeHighlight(it.id) },
                             onDismiss = viewModel::closePanel,
                         )
@@ -589,15 +590,15 @@ class ReaderActivity : AppCompatActivity(), EpubNavigatorFragment.Listener {
         lifecycleScope.launch {
             val target = adjacentChapter(viewModel.chapterLinks, currentChapter(), step)
             when {
-                target == null -> showMessage(if (step < 0) "已经是第一章" else "已经是最后一章")
-                !navigator.go(target) -> showMessage("无法跳转到此章节")
+                target == null -> showMessage(if (step < 0) getString(R.string.first_chapter) else getString(R.string.last_chapter))
+                !navigator.go(target) -> showMessage(getString(R.string.chapter_jump_failed))
             }
         }
     }
 
     private fun openChapter(index: Int): Boolean {
         val opened = viewModel.chapterLinks.getOrNull(index)?.let { (link, _) -> navigator.go(link) } == true
-        if (!opened) showMessage("无法跳转到此章节")
+        if (!opened) showMessage(getString(R.string.chapter_jump_failed))
         return opened
     }
 
@@ -605,7 +606,7 @@ class ReaderActivity : AppCompatActivity(), EpubNavigatorFragment.Listener {
     private suspend fun seekTo(progression: Float): Boolean {
         val destination = viewModel.locate(progression.toDouble())
         val opened = destination != null && navigator.go(destination)
-        if (!opened) showMessage("无法跳转到此位置")
+        if (!opened) showMessage(getString(R.string.position_jump_failed))
         return opened
     }
 
@@ -625,7 +626,7 @@ class ReaderActivity : AppCompatActivity(), EpubNavigatorFragment.Listener {
 
     private fun openSearchHit(hit: Locator) {
         if (!navigator.go(hit)) {
-            showMessage("无法跳转到此位置")
+            showMessage(getString(R.string.position_jump_failed))
             return
         }
         viewModel.closePanel()
@@ -729,6 +730,7 @@ class ReaderActivity : AppCompatActivity(), EpubNavigatorFragment.Listener {
 
 @Composable
 private fun ReaderHeader(title: String, topInset: Dp, onBack: () -> Unit, onSearch: (() -> Unit)?) {
+    val context = LocalContext.current
     Surface(color = MaterialTheme.colorScheme.background) {
         // When the status bar overlays the top bar, the bar's background extends under it and the content moves down
         Column(Modifier.padding(top = topInset)) {
@@ -736,7 +738,7 @@ private fun ReaderHeader(title: String, topInset: Dp, onBack: () -> Unit, onSear
                 Modifier.fillMaxWidth().padding(horizontal = Space.S, vertical = Space.XS),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                IconButton(onClick = onBack) { Icon(AppIcons.ArrowBack, "返回") }
+                IconButton(onClick = onBack) { Icon(AppIcons.ArrowBack, context.getString(R.string.back)) }
                 Text(
                     title,
                     fontSize = 16.sp,
@@ -745,7 +747,7 @@ private fun ReaderHeader(title: String, topInset: Dp, onBack: () -> Unit, onSear
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.weight(1f).padding(horizontal = Space.S),
                 )
-                onSearch?.let { IconButton(onClick = it) { Icon(AppIcons.Search, "搜索") } }
+                onSearch?.let { IconButton(onClick = it) { Icon(AppIcons.Search, context.getString(R.string.search)) } }
             }
             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
         }
@@ -810,6 +812,7 @@ private fun ReaderControls(
     onToggleBookmark: () -> Unit,
     onOpenSettings: () -> Unit,
 ) {
+    val context = LocalContext.current
     val scope = rememberCoroutineScope()
     // Slider position while dragging; after release and the jump, it waits a moment before handing back to the real progress so the slider doesn't snap back before the reading position updates
     var seeking by remember { mutableStateOf<Float?>(null) }
@@ -830,7 +833,7 @@ private fun ReaderControls(
                 Modifier.fillMaxWidth().padding(horizontal = Space.S),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                if (hasChapters) TextButton(onClick = onPreviousChapter) { Text("上一章") }
+                if (hasChapters) TextButton(onClick = onPreviousChapter) { Text(context.getString(R.string.previous_chapter)) }
                 Slider(
                     value = seeking ?: progress,
                     onValueChange = {
@@ -848,21 +851,21 @@ private fun ReaderControls(
                     },
                     modifier = Modifier.weight(1f).padding(horizontal = Space.XS),
                 )
-                if (hasChapters) TextButton(onClick = onNextChapter) { Text("下一章") }
+                if (hasChapters) TextButton(onClick = onNextChapter) { Text(context.getString(R.string.next_chapter)) }
             }
             Row(
                 Modifier.fillMaxWidth().padding(horizontal = Space.S, vertical = Space.XS),
                 horizontalArrangement = Arrangement.SpaceEvenly,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                IconButton(onClick = onOpenContents) { Icon(AppIcons.List, "目录与书签") }
+                IconButton(onClick = onOpenContents) { Icon(AppIcons.List, context.getString(R.string.contents_bookmarks)) }
                 IconToggleButton(checked = bookmarked, onCheckedChange = { onToggleBookmark() }) {
                     Icon(
                         if (bookmarked) AppIcons.Check else AppIcons.Bookmark,
-                        if (bookmarked) "移除当前书签" else "添加书签",
+                        if (bookmarked) context.getString(R.string.remove_bookmark) else context.getString(R.string.add_bookmark),
                     )
                 }
-                IconButton(onClick = onOpenSettings) { Icon(AppIcons.Settings, "阅读设置") }
+                IconButton(onClick = onOpenSettings) { Icon(AppIcons.Settings, context.getString(R.string.reader_settings)) }
             }
         }
     }

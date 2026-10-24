@@ -33,6 +33,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -40,8 +41,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
-import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.viewmodel.compose.viewModel
+import com.bookreader.app.R
 import com.bookreader.app.ui.components.Gap
 import com.bookreader.app.ui.components.Space
 import com.bookreader.app.ui.theme.AppIcons
@@ -57,6 +59,7 @@ fun LibraryEditScreen(
     onSaved: () -> Unit = onDone,
     viewModel: LibraryEditViewModel = viewModel(factory = LibraryEditViewModel.Factory),
 ) {
+    val context = LocalContext.current
     val error by viewModel.error.collectAsStateWithLifecycle()
     LaunchedEffect(libraryId) { viewModel.clearError() }
     val saved = viewModel.load(libraryId)
@@ -101,7 +104,7 @@ fun LibraryEditScreen(
             color = MaterialTheme.colorScheme.surface,
         ) {
             Column(Modifier.padding(Space.XL)) {
-                Text(if (saved == null) "添加书库" else "编辑书库", fontSize = 22.sp, fontWeight = FontWeight.Bold)
+                Text(if (saved == null) context.getString(R.string.add_library) else context.getString(R.string.edit_library), fontSize = 22.sp, fontWeight = FontWeight.Bold)
                 Gap(Space.L)
                 Column(
                     Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState()),
@@ -110,11 +113,18 @@ fun LibraryEditScreen(
                     OutlinedTextField(
                         value = host,
                         onValueChange = ::changeHost,
-                        label = { Text("服务器地址") },
-                        placeholder = { Text("192.168.1.100 或域名") },
+                        label = { Text(context.getString(R.string.server_address)) },
+                        placeholder = { Text(context.getString(R.string.server_address_hint)) },
                         singleLine = true,
                         isError = address.hostError != null,
-                        supportingText = address.hostError?.let { error -> @Composable { Text(error) } },
+                        supportingText = address.hostError?.let { error ->
+                            @Composable {
+                                Text(context.getString(when (error) {
+                                    OpdsAddress.HostError.Address -> R.string.host_error
+                                    OpdsAddress.HostError.Port -> R.string.port_error
+                                }))
+                            }
+                        },
                         shape = fieldShape,
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
                         modifier = Modifier.fillMaxWidth(),
@@ -126,7 +136,7 @@ fun LibraryEditScreen(
                                 value = if (https) "HTTPS" else "HTTP",
                                 onValueChange = {},
                                 readOnly = true,
-                                label = { Text("协议") },
+                                label = { Text(context.getString(R.string.protocol)) },
                                 trailingIcon = { Icon(AppIcons.ArrowDropDown, null) },
                                 singleLine = true,
                                 shape = fieldShape,
@@ -148,7 +158,7 @@ fun LibraryEditScreen(
                         OutlinedTextField(
                             value = port,
                             onValueChange = { port = it.filter(Char::isDigit).take(5) },
-                            label = { Text("端口") },
+                            label = { Text(context.getString(R.string.port)) },
                             // Empty means the protocol's default port; the placeholder shows which one
                             placeholder = { Text(defaultPort(https)) },
                             singleLine = true,
@@ -161,14 +171,14 @@ fun LibraryEditScreen(
                     OutlinedTextField(
                         value = path,
                         onValueChange = { path = it.trim() },
-                        label = { Text("路径（可选）") },
+                        label = { Text(context.getString(R.string.optional_path)) },
                         placeholder = { Text(OpdsAddress.DEFAULT_PATH) },
                         singleLine = true,
                         // The assembled full URL for a quick check before saving; red when the address is invalid
                         supportingText = if (host.isBlank()) null else {
                             @Composable {
                                 Text(
-                                    "完整地址：${address.toUrl()}",
+                                    context.getString(R.string.full_address, address.toUrl()),
                                     color = if (address.valid) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.error,
                                 )
                             }
@@ -180,7 +190,7 @@ fun LibraryEditScreen(
                     OutlinedTextField(
                         value = username,
                         onValueChange = { username = it },
-                        label = { Text("用户名") },
+                        label = { Text(context.getString(R.string.username)) },
                         singleLine = true,
                         shape = fieldShape,
                         modifier = Modifier.fillMaxWidth(),
@@ -188,7 +198,7 @@ fun LibraryEditScreen(
                     OutlinedTextField(
                         value = password,
                         onValueChange = { password = it },
-                        label = { Text("密码") },
+                        label = { Text(context.getString(R.string.password)) },
                         singleLine = true,
                         shape = fieldShape,
                         visualTransformation = PasswordVisualTransformation(),
@@ -198,7 +208,7 @@ fun LibraryEditScreen(
                     OutlinedTextField(
                         value = name,
                         onValueChange = { name = it },
-                        label = { Text("显示名称（可留空）") },
+                        label = { Text(context.getString(R.string.display_name)) },
                         singleLine = true,
                         shape = fieldShape,
                         modifier = Modifier.fillMaxWidth(),
@@ -207,12 +217,12 @@ fun LibraryEditScreen(
                 error?.let { Text(it, color = MaterialTheme.colorScheme.error, fontSize = 13.sp) }
                 Gap(Space.XL)
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(Space.S, Alignment.End)) {
-                    TextButton(onClick = onDone) { Text("取消", fontSize = 16.sp) }
+                    TextButton(onClick = onDone) { Text(context.getString(R.string.cancel), fontSize = 16.sp) }
                     Button(
                         onClick = { viewModel.save(libraryId, name, address.toUrl(), username, password, onSaved) },
                         enabled = address.valid,
                         shape = CircleShape,
-                    ) { Text("保存", fontSize = 16.sp) }
+                    ) { Text(context.getString(R.string.save), fontSize = 16.sp) }
                 }
             }
         }

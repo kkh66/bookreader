@@ -1,13 +1,16 @@
 package com.bookreader.app.ui.opds
 
+import android.content.Context
 import android.graphics.Bitmap
 import android.os.SystemClock
 import android.util.LruCache
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider.AndroidViewModelFactory.Companion.APPLICATION_KEY
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
+import com.bookreader.app.R
 import com.bookreader.app.container
 import com.bookreader.app.data.BookRepository
 import com.bookreader.app.data.LibraryRepository
@@ -48,7 +51,10 @@ class OpdsViewModel(
     private val opds: OpdsRepository,
     private val books: BookRepository,
     private val reader: ReaderRepository,
+    private val context: Context,
 ) : ViewModel() {
+    private val strings get() = ContextCompat.getContextForLanguage(context).resources
+
 
     private data class Level(val url: String, val title: String)
 
@@ -100,11 +106,11 @@ class OpdsViewModel(
         viewModelScope.launch {
             try {
                 val book = opds.download(library, url) { books.import(it, entry.title, source = url) }
-                _state.update { it.copy(message = "已加入书架：${book.title}") }
+                _state.update { it.copy(message = strings.getString(R.string.book_downloaded, book.title)) }
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                _state.update { it.copy(message = "下载失败：${e.message ?: e}") }
+                _state.update { it.copy(message = strings.getString(R.string.download_failed, e.message ?: e)) }
             } finally {
                 _state.update { it.copy(downloading = it.downloading - url) }
             }
@@ -133,7 +139,7 @@ class OpdsViewModel(
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                _state.update { it.copy(message = "打开失败：${e.message ?: e}") }
+                _state.update { it.copy(message = strings.getString(R.string.book_open_failed, e.message ?: e)) }
             } finally {
                 opening = false
                 lastOpenAt = SystemClock.elapsedRealtime()
@@ -162,7 +168,7 @@ class OpdsViewModel(
     private fun load() {
         val level = stack.lastOrNull() ?: return
         val library = library ?: run {
-            _state.update { it.copy(error = "书库不存在") }
+            _state.update { it.copy(error = strings.getString(R.string.library_not_found)) }
             return
         }
         loadJob?.cancel()
@@ -194,7 +200,7 @@ class OpdsViewModel(
         val Factory = viewModelFactory {
             initializer {
                 val container = this[APPLICATION_KEY]!!.container
-                OpdsViewModel(container.libraries, container.opds, container.books, container.reader)
+                OpdsViewModel(container.libraries, container.opds, container.books, container.reader, this[APPLICATION_KEY]!!)
             }
         }
     }

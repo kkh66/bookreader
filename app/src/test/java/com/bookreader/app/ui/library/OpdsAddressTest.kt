@@ -71,8 +71,8 @@ class OpdsAddressTest {
     fun validation() {
         assertFalse(OpdsAddress().valid)
         assertTrue(OpdsAddress(host = "nas").valid)
-        assertEquals("端口请填在右边", OpdsAddress(host = "nas:8083").hostError)
-        assertEquals("这里只填域名或 IP", OpdsAddress(host = "nas/opds").hostError)
+        assertEquals(OpdsAddress.HostError.Port, OpdsAddress(host = "nas:8083").hostError)
+        assertEquals(OpdsAddress.HostError.Address, OpdsAddress(host = "nas/opds").hostError)
         assertTrue(OpdsAddress(host = "nas", port = "70000").portError)
         assertTrue(OpdsAddress(host = "nas", port = "0").portError)
         assertFalse(OpdsAddress(host = "nas", port = "").portError)

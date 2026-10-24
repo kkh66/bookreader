@@ -48,6 +48,7 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -56,6 +57,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.compose.ui.window.DialogWindowProvider
+import com.bookreader.app.R
 import com.bookreader.app.data.Bookmark
 import com.bookreader.app.data.Highlight
 import com.bookreader.app.ui.components.Space
@@ -89,6 +91,7 @@ internal fun ReaderNavigation(
     onRemoveHighlight: (Highlight) -> Unit,
     onDismiss: () -> Unit,
 ) {
+    val context = LocalContext.current
     var selectedTab by rememberSaveable { mutableIntStateOf(0) }
     val chapterList = rememberLazyListState()
     val bookmarkList = rememberLazyListState()
@@ -133,9 +136,9 @@ internal fun ReaderNavigation(
                         Column(Modifier.systemBarsPadding()) {
                             PrimaryTabRow(selectedTabIndex = selectedTab, containerColor = MaterialTheme.colorScheme.background) {
                                 listOfNotNull(
-                                    AppIcons.List to "目录",
-                                    AppIcons.Bookmark to "书签（${bookmarks.size}）",
-                                    highlights?.let { AppIcons.Note to "笔记（${it.size}）" },
+                                    AppIcons.List to context.getString(R.string.contents),
+                                    AppIcons.Bookmark to context.getString(R.string.bookmark_count, bookmarks.size),
+                                    highlights?.let { AppIcons.Note to context.getString(R.string.note_count, it.size) },
                                 ).forEachIndexed { index, (icon, label) ->
                                     Tab(
                                         selected = selectedTab == index,
@@ -147,7 +150,7 @@ internal fun ReaderNavigation(
                                 }
                             }
                             if (selectedTab == 0 && chapters.isEmpty()) {
-                                Text("这本书没有目录", Modifier.padding(Space.L), color = secondary)
+                                Text(context.getString(R.string.no_contents), Modifier.padding(Space.L), color = secondary)
                             } else if (selectedTab == 0) {
                                 LazyColumn(Modifier.weight(1f), state = chapterList) {
                                     itemsIndexed(chapters) { index, chapter ->
@@ -179,7 +182,7 @@ internal fun ReaderNavigation(
                                 }
                             } else if (selectedTab == 2 && highlights != null) {
                                 if (highlights.isEmpty()) {
-                                    Text("还没有笔记，长按正文选中文字后可以高亮或写笔记", Modifier.padding(Space.L), color = secondary)
+                                    Text(context.getString(R.string.no_notes), Modifier.padding(Space.L), color = secondary)
                                 } else {
                                     LazyColumn(Modifier.weight(1f), state = highlightList) {
                                         items(highlights, key = { it.id }) { highlight ->
@@ -193,7 +196,7 @@ internal fun ReaderNavigation(
                                     }
                                 }
                             } else if (bookmarks.isEmpty()) {
-                                Text("还没有书签，点击底部的书签按钮添加", Modifier.padding(Space.L), color = secondary)
+                                Text(context.getString(R.string.no_bookmarks), Modifier.padding(Space.L), color = secondary)
                             } else {
                                 LazyColumn(Modifier.weight(1f), state = bookmarkList) {
                                     items(bookmarks, key = { it.bookmark.id }) { (bookmark, page) ->
@@ -206,12 +209,12 @@ internal fun ReaderNavigation(
                                             Column(Modifier.weight(1f)) {
                                                 Text(bookmark.title, maxLines = 2, overflow = TextOverflow.Ellipsis)
                                                 Text(
-                                                    if (page == null) "本章 ${ShelfFormat.percent(bookmark.progress)}" else "第 $page 页",
+                                                    if (page == null) context.getString(R.string.chapter_progress, ShelfFormat.percent(bookmark.progress)) else context.getString(R.string.page_number, page),
                                                     fontSize = 12.sp,
                                                     color = secondary,
                                                 )
                                             }
-                                            TextButton(onClick = { onRemoveBookmark(bookmark) }) { Text("删除") }
+                                            TextButton(onClick = { onRemoveBookmark(bookmark) }) { Text(context.getString(R.string.delete)) }
                                         }
                                         HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                                     }
@@ -228,6 +231,7 @@ internal fun ReaderNavigation(
 /** A highlight in the notes tab: color bar, marked text, note, chapter and position */
 @Composable
 private fun HighlightRow(highlight: Highlight, onClick: () -> Unit, onRemove: () -> Unit) {
+    val context = LocalContext.current
     val secondary = MaterialTheme.colorScheme.onSurfaceVariant
     Row(
         Modifier.fillMaxWidth().height(IntrinsicSize.Min).clickable(onClick = onClick)
@@ -248,6 +252,6 @@ private fun HighlightRow(highlight: Highlight, onClick: () -> Unit, onRemove: ()
                 modifier = Modifier.padding(top = Space.XS),
             )
         }
-        TextButton(onClick = onRemove, modifier = Modifier.align(Alignment.CenterVertically)) { Text("删除") }
+        TextButton(onClick = onRemove, modifier = Modifier.align(Alignment.CenterVertically)) { Text(context.getString(R.string.delete)) }
     }
 }

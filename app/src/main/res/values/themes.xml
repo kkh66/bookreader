@@ -5,7 +5,7 @@
 
     <!-- Launch screen of the main activity: the book on the icon's indigo, then the app theme -->
     <style name="Theme.BookReader.Starting" parent="Theme.SplashScreen">
-        <item name="windowSplashScreenBackground">#FF3F2BBF</item>
+        <item name="windowSplashScreenBackground">@color/startup_background</item>
         <item name="windowSplashScreenAnimatedIcon">@drawable/splash_icon</item>
         <item name="postSplashScreenTheme">@style/Theme.BookReader</item>
     </style>

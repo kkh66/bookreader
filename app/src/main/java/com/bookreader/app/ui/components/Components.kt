@@ -16,30 +16,32 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.foundation.text.BasicTextField
-import androidx.compose.foundation.text.KeyboardActions
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
-import androidx.compose.ui.focus.FocusRequester
-import androidx.compose.ui.focus.focusRequester
-import androidx.compose.ui.graphics.SolidColor
-import androidx.compose.ui.text.TextStyle
-import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.bookreader.app.R
 import com.bookreader.app.ui.theme.AppIcons
 
 /**
@@ -85,11 +87,12 @@ fun PageHeader(
 /** Top bar for secondary screens: back + title */
 @Composable
 fun BackHeader(title: String, onBack: () -> Unit, actions: @Composable RowScope.() -> Unit = {}) {
+    val context = LocalContext.current
     Row(
         Modifier.fillMaxWidth().padding(horizontal = Space.L, vertical = Space.M),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        CircleIconButton(AppIcons.ArrowBack, "返回", onBack)
+        CircleIconButton(AppIcons.ArrowBack, context.getString(R.string.back), onBack)
         Text(
             title,
             fontSize = 20.sp,
@@ -257,6 +260,7 @@ fun SearchHeader(
     horizontalPadding: Dp = PagePadding,
     onSearch: () -> Unit = {},
 ) {
+    val context = LocalContext.current
     val focus = remember { FocusRequester() }
     val secondary = MaterialTheme.colorScheme.onSurfaceVariant
     LaunchedEffect(Unit) { focus.requestFocus() }
@@ -288,6 +292,6 @@ fun SearchHeader(
             )
         }
         Spacer(Modifier.width(Space.M))
-        CircleIconButton(AppIcons.Close, "关闭搜索", onClose)
+        CircleIconButton(AppIcons.Close, context.getString(R.string.close_search), onClose)
     }
 }

@@ -1,5 +1,7 @@
 package com.bookreader.app.ui.me
 
+import androidx.appcompat.app.AppCompatDelegate
+import androidx.core.os.LocaleListCompat
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider.AndroidViewModelFactory.Companion.APPLICATION_KEY
 import androidx.lifecycle.viewmodel.initializer
@@ -15,9 +17,14 @@ class MeViewModel(
 ) : ViewModel() {
 
     val themeMode = settings.themeMode
+    val startupAnimation = settings.startupAnimation.state
     val libraries = libraries.libraries
 
     fun setThemeMode(mode: ThemeMode) = settings.setThemeMode(mode)
+
+    fun setStartupAnimation(enabled: Boolean) = settings.startupAnimation.set(enabled)
+
+    fun setLanguage(language: String) = AppCompatDelegate.setApplicationLocales(LocaleListCompat.forLanguageTags(language))
 
     companion object {
         val Factory = viewModelFactory {

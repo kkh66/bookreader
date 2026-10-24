@@ -1,17 +1,20 @@
 package com.bookreader.app.reader
 
+import android.content.Context
 import android.graphics.RectF
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider.AndroidViewModelFactory.Companion.APPLICATION_KEY
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
+import com.bookreader.app.R
 import com.bookreader.app.container
 import com.bookreader.app.data.BookFormat
-import com.bookreader.app.data.Bookmark
 import com.bookreader.app.data.BookRepository
+import com.bookreader.app.data.Bookmark
 import com.bookreader.app.data.Highlight
 import com.bookreader.app.data.HighlightKind
 import com.bookreader.app.data.PageAnimation
@@ -21,6 +24,7 @@ import com.bookreader.app.data.StatsRepository
 import com.bookreader.app.data.UserFont
 import com.bookreader.app.data.bookmarkId
 import com.bookreader.app.data.decodeScaledBitmap
+import java.util.UUID
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -47,7 +51,6 @@ import org.readium.r2.shared.publication.services.positions
 import org.readium.r2.shared.publication.services.search.search
 import org.readium.r2.shared.util.AbsoluteUrl
 import org.readium.r2.shared.util.getOrElse
-import java.util.UUID
 
 /** A panel opened over the page */
 internal enum class ReaderPanel { Contents, Settings, Search }
@@ -65,7 +68,10 @@ class ReaderViewModel(
     private val stats: StatsRepository,
     private val reader: ReaderRepository,
     private val settings: SettingsRepository,
+    private val context: Context,
 ) : ViewModel() {
+    private val strings get() = ContextCompat.getContextForLanguage(context).resources
+
 
     val session = reader[bookId]
     val format = session?.format ?: BookFormat.EPUB
@@ -172,7 +178,7 @@ class ReaderViewModel(
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                _messages.send("保存翻页方向失败：${e.message.orEmpty()}")
+                _messages.send(strings.getString(R.string.direction_save_failed, e.message.orEmpty()))
             }
         }
     }
@@ -295,13 +301,13 @@ class ReaderViewModel(
             try {
                 val iterator = publication.search(text)
                 if (iterator == null) {
-                    _searchState.update { it.copy(error = "这本书不支持搜索") }
+                    _searchState.update { it.copy(error = strings.getString(R.string.search_unsupported)) }
                     return@launch
                 }
                 try {
                     while (isActive) {
                         val page = iterator.next().getOrElse { error ->
-                            if (isActive) _searchState.update { it.copy(error = "搜索失败：${error.message}") }
+                            if (isActive) _searchState.update { it.copy(error = strings.getString(R.string.search_failed, error.message)) }
                             null
                         } ?: break
                         if (!isActive) break
@@ -317,7 +323,7 @@ class ReaderViewModel(
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                if (isActive) _searchState.update { it.copy(error = "搜索失败：${e.message.orEmpty()}") }
+                if (isActive) _searchState.update { it.copy(error = strings.getString(R.string.search_failed, e.message.orEmpty())) }
             } finally {
                 if (isActive) _searchState.update { it.copy(running = false) }
             }
@@ -337,7 +343,7 @@ class ReaderViewModel(
             val bitmap = withContext(Dispatchers.IO) {
                 session.read(url)?.let { decodeScaledBitmap(it, width, height) }
             }
-            if (bitmap != null) _viewingImage.value = bitmap.asImageBitmap() else _messages.send("无法打开图片")
+            if (bitmap != null) _viewingImage.value = bitmap.asImageBitmap() else _messages.send(strings.getString(R.string.image_open_failed))
         }
     }
 
@@ -357,11 +363,11 @@ class ReaderViewModel(
                     progress = locator.locations.progression ?: 0.0,
                 )
                 val added = books.toggleBookmark(bookId, bookmark)
-                _messages.send(if (added) "已添加书签" else "已移除书签")
+                _messages.send(if (added) strings.getString(R.string.bookmark_added) else strings.getString(R.string.bookmark_removed))
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                _messages.send("保存书签失败：${e.message.orEmpty()}")
+                _messages.send(strings.getString(R.string.bookmark_save_failed, e.message.orEmpty()))
             }
         }
     }
@@ -370,11 +376,11 @@ class ReaderViewModel(
         viewModelScope.launch {
             try {
                 books.removeBookmark(bookId, bookmarkId)
-                _messages.send("已删除书签")
+                _messages.send(strings.getString(R.string.bookmark_deleted))
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                _messages.send("删除书签失败：${e.message.orEmpty()}")
+                _messages.send(strings.getString(R.string.bookmark_delete_failed, e.message.orEmpty()))
             }
         }
     }
@@ -400,15 +406,15 @@ class ReaderViewModel(
         lastHighlight.value.let { (kind, color) -> createHighlight(locator, kind, color) }
 
     private fun saveHighlight(highlight: Highlight) {
-        launchCatching("保存高亮失败") { books.saveHighlight(bookId, highlight) }
+        launchCatching(strings.getString(R.string.highlight_save_failed)) { books.saveHighlight(bookId, highlight) }
     }
 
     fun removeHighlight(highlightId: String) {
-        launchCatching("删除高亮失败") { books.removeHighlight(bookId, highlightId) }
+        launchCatching(strings.getString(R.string.highlight_delete_failed)) { books.removeHighlight(bookId, highlightId) }
     }
 
     private fun saveProgress(locator: Locator) {
-        launchCatching("保存阅读进度失败") {
+        launchCatching(strings.getString(R.string.progress_save_failed)) {
             books.updateProgress(
                 id = bookId,
                 locator = locator.toJSON().toString(),
@@ -420,7 +426,7 @@ class ReaderViewModel(
 
     /** Records a reading session, capped at 2 hours so a screen left on doesn't inflate the stats */
     fun addReadingTime(seconds: Long) {
-        launchCatching("保存阅读时长失败") { stats.add(bookId, seconds.coerceAtMost(MAX_SESSION_SECONDS)) }
+        launchCatching(strings.getString(R.string.reading_time_save_failed)) { stats.add(bookId, seconds.coerceAtMost(MAX_SESSION_SECONDS)) }
     }
 
     private fun launchCatching(message: String, block: suspend () -> Unit) {
@@ -448,7 +454,7 @@ class ReaderViewModel(
         fun factory(bookId: String) = viewModelFactory {
             initializer {
                 val container = this[APPLICATION_KEY]!!.container
-                ReaderViewModel(bookId, container.books, container.stats, container.reader, container.settings)
+                ReaderViewModel(bookId, container.books, container.stats, container.reader, container.settings, this[APPLICATION_KEY]!!)
             }
         }
     }

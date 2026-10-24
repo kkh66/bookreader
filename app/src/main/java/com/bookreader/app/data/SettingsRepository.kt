@@ -1,23 +1,24 @@
 package com.bookreader.app.data
 
 import android.content.Context
+import com.bookreader.app.R
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.serialization.json.Json
 
-enum class ThemeMode(val label: String) {
-    System("跟随系统"),
-    Light("浅色"),
-    Dark("深色"),
+enum class ThemeMode(val label: Int) {
+    System(R.string.theme_system),
+    Light(R.string.theme_light),
+    Dark(R.string.theme_dark),
 }
 
 /** How a page turn looks; the reader falls back to [Slide] where an effect can't play (see PageTurnLayout) */
-enum class PageAnimation(val label: String) {
-    Curl("仿真"),
-    Cover("覆盖"),
-    Slide("平移"),
-    None("无"),
+enum class PageAnimation(val label: Int) {
+    Curl(R.string.animation_curl),
+    Cover(R.string.animation_cover),
+    Slide(R.string.animation_slide),
+    None(R.string.animation_none),
 }
 
 /**
@@ -109,6 +110,8 @@ class SettingsRepository(context: Context) {
 
     /** Go straight back to the last book read when the app opens */
     val openLastOnLaunch = Toggle("open_last_on_launch", default = false)
+
+    val startupAnimation = Toggle("startup_animation", default = true)
 
     /** Hide the system status bar while reading, show it again with the menu */
     val readerHideStatusBar = Toggle("reader_hide_status_bar", default = true)

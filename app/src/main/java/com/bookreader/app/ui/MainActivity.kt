@@ -1,35 +1,32 @@
 package com.bookreader.app.ui
 
+import android.animation.ValueAnimator
 import android.graphics.Color.TRANSPARENT
+import android.os.Build
 import android.os.Bundle
-import android.os.SystemClock
-import android.view.animation.AccelerateInterpolator
-import androidx.activity.ComponentActivity
+import android.provider.Settings
 import androidx.activity.SystemBarStyle
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
-import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
+import androidx.appcompat.app.AppCompatActivity
 import androidx.compose.foundation.background
-import androidx.compose.ui.unit.sp
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.Alignment
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.navigationBarsPadding
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.fillMaxHeight
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.systemBarsPadding
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -43,26 +40,32 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider.AndroidViewModelFactory.Companion.APPLICATION_KEY
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
+import com.bookreader.app.R
 import com.bookreader.app.container
 import com.bookreader.app.data.SettingsRepository
 import com.bookreader.app.data.ThemeMode
 import com.bookreader.app.data.opds.OpdsParser
 import com.bookreader.app.ui.components.Space
 import com.bookreader.app.ui.discover.DiscoverScreen
+import com.bookreader.app.ui.library.LibraryEditScreen
+import com.bookreader.app.ui.library.LibraryScreen
 import com.bookreader.app.ui.me.MeScreen
 import com.bookreader.app.ui.me.ReadingStyleScreen
 import com.bookreader.app.ui.opds.OpdsScreen
-import com.bookreader.app.ui.library.LibraryEditScreen
-import com.bookreader.app.ui.library.LibraryScreen
 import com.bookreader.app.ui.shelf.ShelfScreen
 import com.bookreader.app.ui.shelf.ShelfViewModel
 import com.bookreader.app.ui.stats.StatsScreen
@@ -71,6 +74,7 @@ import com.bookreader.app.ui.theme.BookReaderTheme
 
 class MainViewModel(settings: SettingsRepository) : ViewModel() {
     val themeMode = settings.themeMode
+    val startupAnimation = settings.startupAnimation.state
 
     companion object {
         val Factory = viewModelFactory {
@@ -79,10 +83,7 @@ class MainViewModel(settings: SettingsRepository) : ViewModel() {
     }
 }
 
-private const val SPLASH_MAX_MS = 3_000L
-private const val SPLASH_EXIT_MS = 300L
-
-class MainActivity : ComponentActivity() {
+class MainActivity : AppCompatActivity() {
 
     private val viewModel: MainViewModel by viewModels { MainViewModel.Factory }
 
@@ -95,19 +96,10 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         // Reopen the last book per the setting only on cold start, not on recreation such as rotation
         if (savedInstanceState == null) shelfViewModel.openLastOnLaunch()
-        // The splash stays while that book opens, capped so a slow book never holds the app back
-        val shownAt = SystemClock.elapsedRealtime()
-        splash.setKeepOnScreenCondition {
-            shelfViewModel.launching.value && SystemClock.elapsedRealtime() - shownAt < SPLASH_MAX_MS
-        }
-        // Leaves with the icon growing as the whole screen fades into the shelf (or the book)
-        splash.setOnExitAnimationListener { provider ->
-            provider.iconView.animate().scaleX(1.4f).scaleY(1.4f).setDuration(SPLASH_EXIT_MS).start()
-            provider.view.animate().alpha(0f).setDuration(SPLASH_EXIT_MS)
-                .setInterpolator(AccelerateInterpolator())
-                .withEndAction(provider::remove)
-                .start()
-        }
+        val motionEnabled = if (Build.VERSION.SDK_INT >= 26) ValueAnimator.areAnimatorsEnabled()
+            else Settings.Global.getFloat(contentResolver, Settings.Global.ANIMATOR_DURATION_SCALE, 1f) > 0f
+        val playStartup = savedInstanceState == null && viewModel.startupAnimation.value && motionEnabled
+        splash.setOnExitAnimationListener { it.remove() }
         setContent {
             val mode by viewModel.themeMode.collectAsStateWithLifecycle()
             val dark = when (mode) {
@@ -120,16 +112,23 @@ class MainActivity : ComponentActivity() {
                 val style = if (dark) SystemBarStyle.dark(TRANSPARENT) else SystemBarStyle.light(TRANSPARENT, TRANSPARENT)
                 enableEdgeToEdge(statusBarStyle = style, navigationBarStyle = style)
             }
-            BookReaderTheme(dark) { AppRoot() }
+            BookReaderTheme(dark) {
+                Box(Modifier.fillMaxSize()) {
+                    AppRoot()
+                    // The splash stays while that book opens, capped so a slow book never holds the app back
+                    // Leaves with the icon growing as the whole screen fades into the shelf (or the book)
+                    StartupOverlay(playStartup, shelfViewModel.launching, dark)
+                }
+            }
         }
     }
 }
 
-private enum class Tab(val label: String, val icon: ImageVector) {
-    Shelf("书架", AppIcons.Shelf),
-    Discover("发现", AppIcons.Discover),
-    Stats("统计", AppIcons.Stats),
-    Me("我的", AppIcons.Me),
+private enum class Tab(val label: Int, val icon: ImageVector) {
+    Shelf(R.string.shelf, AppIcons.Shelf),
+    Discover(R.string.discover, AppIcons.Discover),
+    Stats(R.string.stats, AppIcons.Stats),
+    Me(R.string.me, AppIcons.Me),
 }
 
 /**
@@ -221,6 +220,7 @@ private fun AppRoot() {
 /** Compact bottom bar: icon + small label, 56dp tall (excluding the system navigation bar) */
 @Composable
 private fun BottomBar(selected: Tab, onSelect: (Tab) -> Unit) {
+    val context = LocalContext.current
     Column(Modifier.background(MaterialTheme.colorScheme.background)) {
         HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
         Row(Modifier.fillMaxWidth().navigationBarsPadding().height(56.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -233,9 +233,9 @@ private fun BottomBar(selected: Tab, onSelect: (Tab) -> Unit) {
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.Center,
                 ) {
-                    Icon(tab.icon, tab.label, Modifier.size(22.dp), tint = color)
+                    Icon(tab.icon, context.getString(tab.label), Modifier.size(22.dp), tint = color)
                     Text(
-                        tab.label, fontSize = 11.sp, color = color,
+                        context.getString(tab.label), fontSize = 11.sp, color = color,
                         fontWeight = if (active) FontWeight.SemiBold else FontWeight.Normal,
                         modifier = Modifier.padding(top = Space.XS),
                     )

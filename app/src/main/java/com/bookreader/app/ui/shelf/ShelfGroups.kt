@@ -70,6 +70,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.TextStyle
@@ -83,6 +84,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.compose.ui.window.DialogWindowProvider
+import com.bookreader.app.R
 import com.bookreader.app.data.Book
 import com.bookreader.app.ui.components.BookCover
 import com.bookreader.app.ui.components.COVER_RATIO
@@ -90,8 +92,8 @@ import com.bookreader.app.ui.components.Gap
 import com.bookreader.app.ui.components.ProgressLine
 import com.bookreader.app.ui.components.Space
 import com.bookreader.app.ui.theme.AppIcons
-import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
+import kotlinx.coroutines.launch
 
 /** Group cover: the first 4 covers of the group in a 2×2 grid on a light background, with empty slots if there are fewer than 4 */
 @Composable
@@ -129,22 +131,24 @@ fun Modifier.dropHighlight(active: Boolean): Modifier {
 
 @Composable
 fun GridGroup(group: ShelfEntry.Group, highlighted: Boolean, modifier: Modifier) {
+    val context = LocalContext.current
     Column(Modifier.padding(bottom = Space.XL).then(modifier)) {
         GroupCover(group.items, Modifier.dropHighlight(highlighted).fillMaxWidth().aspectRatio(COVER_RATIO))
         Gap(Space.M)
         Text(group.name, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis)
-        Text("共 ${group.items.size} 本", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(context.getString(R.string.total_book_count, group.items.size), fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
 
 @Composable
 fun ListGroup(group: ShelfEntry.Group, highlighted: Boolean, modifier: Modifier) {
+    val context = LocalContext.current
     val secondary = MaterialTheme.colorScheme.onSurfaceVariant
     Row(modifier.fillMaxWidth().padding(vertical = Space.M), verticalAlignment = Alignment.CenterVertically) {
         GroupCover(group.items, Modifier.dropHighlight(highlighted).width(64.dp).aspectRatio(COVER_RATIO))
         Column(Modifier.weight(1f).padding(horizontal = Space.L)) {
             Text(group.name, fontSize = 16.sp, lineHeight = 22.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
-            Text("共 ${group.items.size} 本", fontSize = 13.sp, color = secondary)
+            Text(context.getString(R.string.total_book_count, group.items.size), fontSize = 13.sp, color = secondary)
         }
         Icon(AppIcons.ChevronRight, null, Modifier.size(22.dp), tint = secondary)
     }
@@ -153,6 +157,7 @@ fun ListGroup(group: ShelfEntry.Group, highlighted: Boolean, modifier: Modifier)
 /** Name input for a new group, focused when opened with the cursor at the end */
 @Composable
 fun GroupNameDialog(title: String, initial: String, onConfirm: (String) -> Unit, onDismiss: () -> Unit) {
+    val context = LocalContext.current
     var name by remember { mutableStateOf(TextFieldValue(initial, TextRange(initial.length))) }
     val valid = name.text.isNotBlank()
     AlertDialog(
@@ -166,16 +171,16 @@ fun GroupNameDialog(title: String, initial: String, onConfirm: (String) -> Unit,
                 value = name,
                 onValueChange = { name = it },
                 singleLine = true,
-                placeholder = { Text("分组名称") },
+                placeholder = { Text(context.getString(R.string.group_name)) },
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
                 keyboardActions = KeyboardActions(onDone = { if (valid) onConfirm(name.text.trim()) }),
                 modifier = Modifier.focusRequester(focus),
             )
         },
         confirmButton = {
-            TextButton(onClick = { onConfirm(name.text.trim()) }, enabled = valid) { Text("确定") }
+            TextButton(onClick = { onConfirm(name.text.trim()) }, enabled = valid) { Text(context.getString(R.string.confirm)) }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("取消") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(context.getString(R.string.cancel)) } },
     )
 }
 
@@ -199,6 +204,7 @@ fun GroupDialog(
     onUngroup: () -> Unit,
     onDismiss: () -> Unit,
 ) {
+    val context = LocalContext.current
     var editing by remember { mutableStateOf(false) }
     var title by remember { mutableStateOf(TextFieldValue(group.name)) }
     var selecting by remember { mutableStateOf(false) }
@@ -319,17 +325,17 @@ fun GroupDialog(
                                     modifier = Modifier.weight(1f).focusRequester(focus),
                                 )
                                 IconButton(onClick = { title = TextFieldValue("") }) {
-                                    Icon(AppIcons.Close, "清空", tint = secondary)
+                                    Icon(AppIcons.Close, context.getString(R.string.clear), tint = secondary)
                                 }
                             }
                             selecting -> {
                                 Text(
-                                    "已选 ${chosen.size} 本", fontSize = 20.sp, fontWeight = FontWeight.SemiBold,
+                                    context.getString(R.string.selected_book_count, chosen.size), fontSize = 20.sp, fontWeight = FontWeight.SemiBold,
                                     modifier = Modifier.weight(1f),
                                 )
                                 val all = chosen.size == group.items.size
                                 TextButton(onClick = { selected = if (all) emptySet() else group.items.map { it.book.id }.toSet() }) {
-                                    Text(if (all) "全不选" else "全选")
+                                    Text(if (all) context.getString(R.string.deselect_all) else context.getString(R.string.select_all))
                                 }
                             }
                             else -> {
@@ -340,9 +346,9 @@ fun GroupDialog(
                                         .clickable(interactionSource = null, indication = null) { startEditing() },
                                 )
                                 IconButton(onClick = ::startEditing) {
-                                    Icon(AppIcons.Edit, "重命名", Modifier.size(20.dp), tint = secondary)
+                                    Icon(AppIcons.Edit, context.getString(R.string.rename), Modifier.size(20.dp), tint = secondary)
                                 }
-                                CountChip("${group.items.size} 本")
+                                CountChip(context.getString(R.string.book_count, group.items.size))
                             }
                         }
                     }
@@ -375,17 +381,17 @@ fun GroupDialog(
                 HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                 Row(Modifier.fillMaxWidth().padding(Space.L), horizontalArrangement = Arrangement.spacedBy(Space.M)) {
                     if (selecting) {
-                        SheetButton("移出分组", Modifier.weight(1f), enabled = chosen.isNotEmpty()) {
+                        SheetButton(context.getString(R.string.remove_from_group), Modifier.weight(1f), enabled = chosen.isNotEmpty()) {
                             onRemove(chosen)
                             endSelection()
                         }
-                        SheetButton("删除", Modifier.weight(1f), enabled = chosen.isNotEmpty(), danger = true) {
+                        SheetButton(context.getString(R.string.delete), Modifier.weight(1f), enabled = chosen.isNotEmpty(), danger = true) {
                             onDelete(chosen)
                             endSelection()
                         }
                     } else {
-                        SheetButton("批量管理", Modifier.weight(1f), icon = AppIcons.Add) { selecting = true }
-                        SheetButton("解散分组", Modifier.weight(1f), danger = true, onClick = onUngroup)
+                        SheetButton(context.getString(R.string.manage_books), Modifier.weight(1f), icon = AppIcons.Add) { selecting = true }
+                        SheetButton(context.getString(R.string.ungroup), Modifier.weight(1f), danger = true, onClick = onUngroup)
                     }
                 }
             }
@@ -495,6 +501,7 @@ private fun SelectMark(selected: Boolean, modifier: Modifier) {
 /** Dashed tile at the end of the group's books: opens the picker */
 @Composable
 private fun AddBookTile(onClick: () -> Unit) {
+    val context = LocalContext.current
     val color = MaterialTheme.colorScheme.onSurfaceVariant
     Column(
         Modifier.padding(bottom = Space.L).clickable(onClick = onClick),
@@ -516,10 +523,10 @@ private fun AddBookTile(onClick: () -> Unit) {
         ) {
             Icon(AppIcons.Add, null, Modifier.size(28.dp), tint = color)
             Gap(Space.XS)
-            Text("添加图书", fontSize = 12.sp, color = color)
+            Text(context.getString(R.string.add_books), fontSize = 12.sp, color = color)
         }
         Gap(Space.S)
-        Text("添加", fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+        Text(context.getString(R.string.add), fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
     }
 }
 
@@ -531,6 +538,7 @@ private fun AddBooksDialog(
     onConfirm: (List<String>) -> Unit,
     onDismiss: () -> Unit,
 ) {
+    val context = LocalContext.current
     var picked by remember { mutableStateOf(emptySet<String>()) }
     val maxHeight = (LocalConfiguration.current.screenHeightDp * 0.8f).dp
     Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
@@ -540,12 +548,12 @@ private fun AddBooksDialog(
                 .padding(Space.XL),
         ) {
             Text(
-                "添加到「$groupName」", fontSize = 20.sp, fontWeight = FontWeight.Bold,
+                context.getString(R.string.add_to_group, groupName), fontSize = 20.sp, fontWeight = FontWeight.Bold,
                 maxLines = 1, overflow = TextOverflow.Ellipsis,
             )
             Gap(Space.L)
             if (candidates.isEmpty()) {
-                Text("书架上的书都已经在这个分组里了", fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(context.getString(R.string.all_books_in_group), fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
             } else {
                 LazyVerticalGrid(
                     columns = GridCells.Adaptive(84.dp),
@@ -566,9 +574,9 @@ private fun AddBooksDialog(
             }
             Gap(Space.L)
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(Space.S, Alignment.End)) {
-                TextButton(onClick = onDismiss) { Text("取消") }
+                TextButton(onClick = onDismiss) { Text(context.getString(R.string.cancel)) }
                 Button(onClick = { onConfirm(picked.toList()) }, enabled = picked.isNotEmpty(), shape = CircleShape) {
-                    Text(if (picked.isEmpty()) "添加" else "添加 ${picked.size} 本")
+                    Text(if (picked.isEmpty()) context.getString(R.string.add) else context.getString(R.string.add_book_count, picked.size))
                 }
             }
         }

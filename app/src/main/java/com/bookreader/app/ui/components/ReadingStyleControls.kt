@@ -24,9 +24,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.bookreader.app.R
 import com.bookreader.app.data.ReadingStyle
 import com.bookreader.app.data.UserFont
 import java.util.Locale
@@ -39,10 +41,11 @@ import kotlin.math.roundToInt
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun ReadingStyleControls(style: ReadingStyle, fonts: List<UserFont>, onChange: (ReadingStyle) -> Unit) {
+    val context = LocalContext.current
     Column(verticalArrangement = Arrangement.spacedBy(Space.S)) {
-        Text("字体", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(context.getString(R.string.font), fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
         FlowRow(horizontalArrangement = Arrangement.spacedBy(Space.S), verticalArrangement = Arrangement.spacedBy(Space.S)) {
-            val choices = listOf(null to "书籍默认", ReadingStyle.SERIF to "宋体", ReadingStyle.SANS_SERIF to "黑体") +
+            val choices = listOf(null to context.getString(R.string.book_default), ReadingStyle.SERIF to context.getString(R.string.serif), ReadingStyle.SANS_SERIF to context.getString(R.string.sans_serif)) +
                 fonts.map { it.family to it.name }
             choices.forEach { (family, label) ->
                 ChoiceChip(label, selected = style.fontFamily == family) { onChange(style.copy(fontFamily = family)) }
@@ -50,27 +53,27 @@ fun ReadingStyleControls(style: ReadingStyle, fonts: List<UserFont>, onChange: (
         }
         Gap(Space.XS)
         StyleSlider(
-            "字号", style.fontSize, 0.7..2.0, 0.05,
+            context.getString(R.string.font_size), style.fontSize, 0.7..2.0, 0.05,
             label = { "${(it * 100).roundToInt()}%" },
         ) { onChange(style.copy(fontSize = it)) }
         StyleSlider(
-            "字重", style.fontWeight, 0.5..2.0, 0.25, default = 1.0,
+            context.getString(R.string.font_weight), style.fontWeight, 0.5..2.0, 0.25, default = 1.0,
             label = { "${(it * 100).roundToInt()}%" },
         ) { onChange(style.copy(fontWeight = it)) }
         StyleSlider(
-            "行距", style.lineHeight, 1.0..2.0, 0.1, default = 1.5,
+            context.getString(R.string.line_height), style.lineHeight, 1.0..2.0, 0.1, default = 1.5,
             label = { decimal(it) },
         ) { onChange(style.copy(lineHeight = it)) }
         StyleSlider(
-            "段距", style.paragraphSpacing, 0.0..2.0, 0.1, default = 0.5,
+            context.getString(R.string.paragraph_spacing), style.paragraphSpacing, 0.0..2.0, 0.1, default = 0.5,
             label = { decimal(it) },
         ) { onChange(style.copy(paragraphSpacing = it)) }
         StyleSlider(
-            "页边距", style.pageMargins, 0.0..3.0, 0.25,
+            context.getString(R.string.page_margins), style.pageMargins, 0.0..3.0, 0.25,
             label = { decimal(it) },
         ) { onChange(style.copy(pageMargins = it)) }
         TextButton(onClick = { onChange(ReadingStyle()) }, modifier = Modifier.align(Alignment.End)) {
-            Text("恢复书籍默认")
+            Text(context.getString(R.string.reset_book_defaults))
         }
     }
 }
@@ -79,13 +82,14 @@ fun ReadingStyleControls(style: ReadingStyle, fonts: List<UserFont>, onChange: (
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun ReadingDirectionControls(rightToLeft: Boolean, onChange: (Boolean) -> Unit) {
+    val context = LocalContext.current
     Column(verticalArrangement = Arrangement.spacedBy(Space.S)) {
-        Text("翻页方向", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(context.getString(R.string.reading_direction), fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
         FlowRow(horizontalArrangement = Arrangement.spacedBy(Space.S), verticalArrangement = Arrangement.spacedBy(Space.S)) {
-            ChoiceChip("普通（从左往右）", selected = !rightToLeft) { onChange(false) }
-            ChoiceChip("日式（从右往左）", selected = rightToLeft) { onChange(true) }
+            ChoiceChip(context.getString(R.string.left_to_right), selected = !rightToLeft) { onChange(false) }
+            ChoiceChip(context.getString(R.string.right_to_left), selected = rightToLeft) { onChange(true) }
         }
-        Text("只对这本书生效", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(context.getString(R.string.book_only), fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
 
@@ -121,6 +125,7 @@ private fun StyleSlider(
     label: (Double) -> String,
     onChange: (Double) -> Unit,
 ) {
+    val context = LocalContext.current
     var dragging by remember { mutableStateOf<Float?>(null) }
     val shown = dragging?.toDouble() ?: value
     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -139,7 +144,7 @@ private fun StyleSlider(
             modifier = Modifier.weight(1f),
         )
         Text(
-            shown?.let { label(snap(it, range, step)) } ?: "默认",
+            shown?.let { label(snap(it, range, step)) } ?: context.getString(R.string.default),
             fontSize = 13.sp,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             textAlign = TextAlign.End,

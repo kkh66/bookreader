@@ -1,8 +1,16 @@
 package com.bookreader.app.data
 
+import android.content.Context
 import android.graphics.Bitmap
 import android.util.Size
+import androidx.core.content.ContextCompat
+import com.bookreader.app.R
 import com.bookreader.app.reader.Readium
+import java.io.File
+import java.io.IOException
+import java.io.InputStream
+import java.util.UUID
+import kotlin.math.roundToLong
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -12,16 +20,11 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
+import org.jsoup.Jsoup
 import org.readium.r2.shared.publication.Publication
 import org.readium.r2.shared.publication.services.coverFitting
 import org.readium.r2.shared.util.Url
 import org.readium.r2.shared.util.getOrElse
-import org.jsoup.Jsoup
-import java.io.File
-import java.io.IOException
-import java.io.InputStream
-import java.util.UUID
-import kotlin.math.roundToLong
 
 @Serializable
 data class Bookmark(
@@ -72,7 +75,9 @@ data class Book(
 /**
  * Bookshelf: book files (EPUB / PDF / CBZ) live in [dir], covers in dir/covers, metadata in dir/books.json
  */
-class BookRepository(private val dir: File, private val readium: Readium) {
+class BookRepository(private val dir: File, private val readium: Readium, private val context: Context) {
+    private val strings get() = ContextCompat.getContextForLanguage(context).resources
+
 
     private val json = Json { ignoreUnknownKeys = true }
     private val indexFile = File(dir, "books.json")
@@ -107,9 +112,9 @@ class BookRepository(private val dir: File, private val readium: Readium) {
                 input.use { src -> temp.outputStream().use { src.copyTo(it) } }
             }
             // The content decides the format, which the file extension then records
-            val format = readium.sniff(temp) ?: throw IOException("不支持这种文件，只能导入 EPUB、PDF、CBZ")
+            val format = readium.sniff(temp) ?: throw IOException(strings.getString(R.string.unsupported_book))
             file = File(dir, "$id.${format.extension}")
-            if (!temp.renameTo(file)) throw IOException("保存文件失败")
+            if (!temp.renameTo(file)) throw IOException(strings.getString(R.string.file_save_failed))
             val publication = readium.open(file)
             val book = try {
                 saveCover(id, publication, format)
@@ -203,7 +208,7 @@ class BookRepository(private val dir: File, private val readium: Readium) {
     suspend fun toggleBookmark(bookId: String, bookmark: Bookmark): Boolean {
         var added = false
         update { list ->
-            require(list.any { it.id == bookId }) { "书籍已删除" }
+            require(list.any { it.id == bookId }) { strings.getString(R.string.book_deleted) }
             list.map { book ->
                 if (book.id != bookId) book else {
                     added = book.bookmarks.none { it.id == bookmark.id }
@@ -217,7 +222,7 @@ class BookRepository(private val dir: File, private val readium: Readium) {
     /** Adds a highlight, or replaces the one with the same id (style, color or note changed) */
     suspend fun saveHighlight(bookId: String, highlight: Highlight) {
         update { list ->
-            require(list.any { it.id == bookId }) { "书籍已删除" }
+            require(list.any { it.id == bookId }) { strings.getString(R.string.book_deleted) }
             list.map { book ->
                 if (book.id != bookId) book else {
                     val others = book.highlights.filterNot { it.id == highlight.id }

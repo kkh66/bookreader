@@ -19,15 +19,16 @@ import androidx.compose.material3.Tab
 import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.ui.graphics.Color
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -35,6 +36,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.compose.ui.window.DialogWindowProvider
+import com.bookreader.app.R
 import com.bookreader.app.data.BookFormat
 import com.bookreader.app.data.PageAnimation
 import com.bookreader.app.data.ReadingStyle
@@ -72,6 +74,7 @@ internal fun ReaderSettingsDialog(
     onOpenLastOnLaunchChange: (Boolean) -> Unit,
     onDismiss: () -> Unit,
 ) {
+    val context = LocalContext.current
     var tab by rememberSaveable { mutableIntStateOf(0) }
     Dialog(
         onDismissRequest = onDismiss,
@@ -95,8 +98,8 @@ internal fun ReaderSettingsDialog(
                     Modifier.fillMaxWidth().padding(start = Space.XL, end = Space.S, top = Space.S),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Text("阅读设置", fontSize = 18.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
-                    TextButton(onClick = onDismiss) { Text("完成") }
+                    Text(context.getString(R.string.reader_settings), fontSize = 18.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                    TextButton(onClick = onDismiss) { Text(context.getString(R.string.done)) }
                 }
                 // Two tabs: text style (adjusted with the page visible) or page turn direction, and reading behavior switches
                 TabRow(
@@ -104,7 +107,7 @@ internal fun ReaderSettingsDialog(
                     containerColor = Color.Transparent,
                     contentColor = MaterialTheme.colorScheme.primary,
                 ) {
-                    listOf(if (format == BookFormat.EPUB) "文字" else "翻页", "行为").forEachIndexed { index, label ->
+                    listOf(if (format == BookFormat.EPUB) context.getString(R.string.text_settings) else context.getString(R.string.page_turn), context.getString(R.string.behavior)).forEachIndexed { index, label ->
                         Tab(selected = tab == index, onClick = { tab = index }, text = { Text(label, fontSize = 15.sp) })
                     }
                 }

@@ -1,67 +1,73 @@
 package com.bookreader.app.ui.opds
 
-import androidx.activity.compose.BackHandler
 import android.graphics.Bitmap
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
-import androidx.compose.material3.OutlinedButton
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.platform.LocalConfiguration
-import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.window.Dialog
-import androidx.compose.ui.window.DialogProperties
-import com.bookreader.app.ui.components.Gap
-import com.bookreader.app.ui.components.RemoteCover
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.aspectRatio
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.bookreader.app.R
 import com.bookreader.app.data.BookFormat
 import com.bookreader.app.data.opds.OpdsEntry
 import com.bookreader.app.reader.ReaderActivity
 import com.bookreader.app.ui.components.BackHeader
 import com.bookreader.app.ui.components.COVER_RATIO
 import com.bookreader.app.ui.components.CircleIconButton
+import com.bookreader.app.ui.components.Gap
 import com.bookreader.app.ui.components.IconTileRow
 import com.bookreader.app.ui.components.PagePadding
+import com.bookreader.app.ui.components.RemoteCover
+import com.bookreader.app.ui.components.SearchHeader
 import com.bookreader.app.ui.components.Space
+import com.bookreader.app.ui.library.LibraryViewModel
 import com.bookreader.app.ui.theme.AppIcons
 
 @Composable
@@ -71,13 +77,24 @@ fun OpdsScreen(
     startTitle: String,
     onExit: () -> Unit,
     viewModel: OpdsViewModel = viewModel(factory = OpdsViewModel.Factory),
+    libraryViewModel: LibraryViewModel = viewModel(factory = LibraryViewModel.Factory),
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
+    val libraryState by libraryViewModel.state.collectAsStateWithLifecycle()
+    var searching by rememberSaveable(libraryId, startUrl) { mutableStateOf(false) }
+    var query by rememberSaveable(libraryId, startUrl) { mutableStateOf("") }
     val context = LocalContext.current
     val snackbar = remember { SnackbarHostState() }
     val goBack = { if (!viewModel.back()) onExit() }
+    val closeSearch = {
+        searching = false
+        query = ""
+    }
+    val canSearch = libraryState.library?.id == libraryId && libraryState.searchTemplate != null
 
     LaunchedEffect(libraryId, startUrl) { viewModel.start(libraryId, startUrl, startTitle) }
+    // Calibre-Web may advertise search only at the library root, so reuse its template even in nested catalogs.
+    LaunchedEffect(libraryId) { libraryViewModel.start(libraryId) }
     LaunchedEffect(Unit) {
         viewModel.openReader.collect { context.startActivity(ReaderActivity.intent(context, it)) }
     }
@@ -87,12 +104,30 @@ fun OpdsScreen(
             viewModel.clearMessage()
         }
     }
-    BackHandler(onBack = goBack)
+    BackHandler(onBack = if (searching) closeSearch else goBack)
 
     Box(Modifier.fillMaxSize()) {
         Column {
-            BackHeader(state.title.ifBlank { "Calibre 书库" }, onBack = goBack) {
-                CircleIconButton(AppIcons.Refresh, "刷新", viewModel::refresh)
+            if (searching) {
+                SearchHeader(
+                    query = query,
+                    onQueryChange = { query = it },
+                    placeholder = context.getString(R.string.library_search_hint),
+                    onClose = closeSearch,
+                    onSearch = {
+                        if (canSearch && query.isNotBlank()) {
+                            libraryViewModel.searchUrl(query)?.let {
+                                viewModel.open(it, context.getString(R.string.search_title, query.trim()))
+                                closeSearch()
+                            }
+                        }
+                    },
+                )
+            } else {
+                BackHeader(state.title.ifBlank { context.getString(R.string.calibre_library) }, onBack = goBack) {
+                    if (canSearch) CircleIconButton(AppIcons.Search, context.getString(R.string.search)) { searching = true }
+                    CircleIconButton(AppIcons.Refresh, context.getString(R.string.refresh), viewModel::refresh)
+                }
             }
             if (state.loading) LinearProgressIndicator(Modifier.fillMaxWidth())
             state.error?.let {
@@ -127,7 +162,7 @@ fun OpdsScreen(
                     item {
                         IconTileRow(
                             icon = AppIcons.ArrowForward,
-                            title = "下一页",
+                            title = context.getString(R.string.next_page),
                             showDivider = false,
                             onClick = { viewModel.openNext(next) },
                         )
@@ -171,6 +206,7 @@ private fun BookRow(
     onClick: () -> Unit,
     onDownload: () -> Unit,
 ) {
+    val context = LocalContext.current
     Column {
         Row(
             Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = PagePadding, vertical = Space.M),
@@ -193,14 +229,14 @@ private fun BookRow(
             when (status) {
                 DownloadStatus.Running -> CircularProgressIndicator(Modifier.size(22.dp), strokeWidth = 2.dp)
                 DownloadStatus.Done -> Text(
-                    "阅读",
+                    context.getString(R.string.reading),
                     fontSize = 13.sp,
                     fontWeight = FontWeight.SemiBold,
                     modifier = Modifier.clip(CircleShape).background(MaterialTheme.colorScheme.surfaceVariant)
                         .clickable(onClick = onClick).padding(horizontal = Space.M, vertical = Space.XS),
                 )
                 DownloadStatus.None -> Icon(
-                    AppIcons.Download, "下载",
+                    AppIcons.Download, context.getString(R.string.download),
                     Modifier.size(40.dp).clip(CircleShape).clickable(onClick = onDownload).padding(Space.S),
                 )
             }
@@ -225,6 +261,7 @@ private fun BookDetailDialog(
     onRead: () -> Unit,
     onDismiss: () -> Unit,
 ) {
+    val context = LocalContext.current
     val secondary = MaterialTheme.colorScheme.onSurfaceVariant
     val maxHeight = (LocalConfiguration.current.screenHeightDp * 0.85f).dp
     Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
@@ -277,7 +314,7 @@ private fun BookDetailDialog(
             }
             Gap(Space.XL)
             Row(horizontalArrangement = Arrangement.spacedBy(Space.M)) {
-                OutlinedButton(onClick = onDismiss, shape = CircleShape, modifier = Modifier.weight(1f)) { Text("关闭") }
+                OutlinedButton(onClick = onDismiss, shape = CircleShape, modifier = Modifier.weight(1f)) { Text(context.getString(R.string.close)) }
                 // Becomes 开始阅读 as soon as the download finishes, so the book can be opened right from here
                 Button(
                     onClick = if (status == DownloadStatus.Done) onRead else onDownload,
@@ -287,9 +324,9 @@ private fun BookDetailDialog(
                 ) {
                     Text(
                         when (status) {
-                            DownloadStatus.None -> "下载到书架"
-                            DownloadStatus.Running -> "下载中…"
-                            DownloadStatus.Done -> "开始阅读"
+                            DownloadStatus.None -> context.getString(R.string.download_to_shelf)
+                            DownloadStatus.Running -> context.getString(R.string.downloading)
+                            DownloadStatus.Done -> context.getString(R.string.start_reading)
                         }
                     )
                 }

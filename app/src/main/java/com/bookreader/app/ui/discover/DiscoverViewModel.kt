@@ -1,10 +1,13 @@
 package com.bookreader.app.ui.discover
 
+import android.content.Context
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider.AndroidViewModelFactory.Companion.APPLICATION_KEY
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
+import com.bookreader.app.R
 import com.bookreader.app.container
 import com.bookreader.app.data.LibraryRepository
 import com.bookreader.app.data.SettingsRepository
@@ -19,7 +22,10 @@ import kotlinx.coroutines.launch
 class DiscoverViewModel(
     private val libraries: LibraryRepository,
     private val settings: SettingsRepository,
+    private val context: Context,
 ) : ViewModel() {
+    private val strings get() = ContextCompat.getContextForLanguage(context).resources
+
 
     val items = libraries.libraries
     val grid = settings.libraryGrid
@@ -40,7 +46,7 @@ class DiscoverViewModel(
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                _message.value = "删除书库失败：${e.message.orEmpty()}"
+                _message.value = strings.getString(R.string.library_delete_failed, e.message.orEmpty())
             }
         }
     }
@@ -49,7 +55,7 @@ class DiscoverViewModel(
         val Factory = viewModelFactory {
             initializer {
                 val container = this[APPLICATION_KEY]!!.container
-                DiscoverViewModel(container.libraries, container.settings)
+                DiscoverViewModel(container.libraries, container.settings, this[APPLICATION_KEY]!!)
             }
         }
     }

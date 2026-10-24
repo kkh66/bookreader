@@ -44,6 +44,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.bookreader.app.R
 import com.bookreader.app.data.OpdsLibrary
 import com.bookreader.app.ui.components.CircleIconButton
 import com.bookreader.app.ui.components.Gap
@@ -86,24 +87,24 @@ fun DiscoverScreen(
         modifier = Modifier.fillMaxSize(),
     ) {
         item(span = { GridItemSpan(maxLineSpan) }) {
-            PageHeader("发现", horizontalPadding = 0.dp) {
+            PageHeader(context.getString(R.string.discover), horizontalPadding = 0.dp) {
                 Box {
-                    CircleIconButton(AppIcons.More, "更多") { menu = true }
+                    CircleIconButton(AppIcons.More, context.getString(R.string.more)) { menu = true }
                     DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
                         DropdownMenuItem(
-                            text = { Text("导入本地书籍") },
+                            text = { Text(context.getString(R.string.import_local_book)) },
                             leadingIcon = { Icon(AppIcons.Import, null) },
                             onClick = { menu = false; onImportBook() },
                         )
                         DropdownMenuItem(
-                            text = { Text("添加书库") },
+                            text = { Text(context.getString(R.string.add_library)) },
                             leadingIcon = { Icon(AppIcons.Library, null) },
                             onClick = { menu = false; onAddLibrary() },
                         )
                         DropdownMenuItem(
-                            text = { Text("使用格子布局") },
+                            text = { Text(context.getString(R.string.use_grid_layout)) },
                             leadingIcon = { Icon(AppIcons.Grid, null) },
-                            trailingIcon = { if (grid) Icon(AppIcons.Check, "已启用") },
+                            trailingIcon = { if (grid) Icon(AppIcons.Check, context.getString(R.string.enabled)) },
                             onClick = { menu = false; viewModel.setGrid(!grid) },
                         )
                     }
@@ -127,15 +128,15 @@ fun DiscoverScreen(
     pendingDelete?.let { library ->
         AlertDialog(
             onDismissRequest = { pendingDelete = null },
-            title = { Text("删除书库「${library.name}」？") },
-            text = { Text("只删除书库配置，已下载到书架的书不受影响") },
+            title = { Text(context.getString(R.string.delete_library_confirm, library.name)) },
+            text = { Text(context.getString(R.string.delete_library_hint)) },
             confirmButton = {
                 TextButton(onClick = {
                     viewModel.delete(library.id)
                     pendingDelete = null
-                }) { Text("删除") }
+                }) { Text(context.getString(R.string.delete)) }
             },
-            dismissButton = { TextButton(onClick = { pendingDelete = null }) { Text("取消") } },
+            dismissButton = { TextButton(onClick = { pendingDelete = null }) { Text(context.getString(R.string.cancel)) } },
         )
     }
 }
@@ -168,17 +169,18 @@ private fun LibraryCard(
     onEdit: () -> Unit,
     onDelete: () -> Unit,
 ) {
+    val context = LocalContext.current
     var menu by remember { mutableStateOf(false) }
     val more = @Composable {
         Box {
             Icon(
-                AppIcons.MoreVert, "更多",
+                AppIcons.MoreVert, context.getString(R.string.more),
                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.size(32.dp).clip(CircleShape).clickable { menu = true }.padding(Space.XS),
             )
             DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
-                DropdownMenuItem(text = { Text("编辑") }, onClick = { menu = false; onEdit() })
-                DropdownMenuItem(text = { Text("删除") }, onClick = { menu = false; onDelete() })
+                DropdownMenuItem(text = { Text(context.getString(R.string.edit)) }, onClick = { menu = false; onEdit() })
+                DropdownMenuItem(text = { Text(context.getString(R.string.delete)) }, onClick = { menu = false; onDelete() })
             }
         }
     }
@@ -223,16 +225,17 @@ private fun LibraryCard(
 
 @Composable
 private fun EmptyLibraries(onAdd: () -> Unit) {
+    val context = LocalContext.current
     SurfaceCard {
         Column(Modifier.padding(Space.XL)) {
-            Text("还没有书库", fontSize = 20.sp, fontWeight = FontWeight.Bold)
+            Text(context.getString(R.string.no_libraries), fontSize = 20.sp, fontWeight = FontWeight.Bold)
             Gap(Space.S)
             Text(
-                "添加 Calibre / Calibre-Web 的 OPDS 地址，就能在这里浏览和下载",
+                context.getString(R.string.add_library_hint),
                 fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             Gap(Space.L)
-            Button(onClick = onAdd, shape = CircleShape) { Text("添加书库") }
+            Button(onClick = onAdd, shape = CircleShape) { Text(context.getString(R.string.add_library)) }
         }
     }
 }

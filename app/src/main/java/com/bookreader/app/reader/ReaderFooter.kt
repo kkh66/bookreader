@@ -32,16 +32,17 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
+import com.bookreader.app.R
 import com.bookreader.app.ui.components.Space
 import com.bookreader.app.ui.shelf.ShelfFormat
 import com.bookreader.app.ui.theme.AppIcons
-import kotlinx.coroutines.delay
-import org.readium.r2.shared.publication.Locator
 import java.time.Instant
 import java.time.LocalDateTime
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import kotlin.math.roundToInt
+import kotlinx.coroutines.delay
+import org.readium.r2.shared.publication.Locator
 
 /** Height of the status line under the page; the page area is shortened by this much so text never sits under it */
 internal val FOOTER_HEIGHT = 26.dp
@@ -68,14 +69,14 @@ internal fun ReaderFooter(locator: Locator, total: Int, chapterProgress: Boolean
         verticalAlignment = Alignment.CenterVertically,
     ) {
         if (battery != null) {
-            Icon(batteryIcon(battery), "电量", Modifier.size(18.dp), tint = batteryColor(battery.level))
+            Icon(batteryIcon(battery), context.getString(R.string.battery), Modifier.size(18.dp), tint = batteryColor(battery.level))
             Spacer(Modifier.width(Space.XS))
         }
         FooterText(listOfNotNull(battery?.let { "${it.level}%" }, time, date).joinToString("  "), contentColor)
         Spacer(Modifier.weight(1f))
         FooterText(
             listOfNotNull(
-                chapter?.let { "本章 ${ShelfFormat.percent(it)}" },
+                chapter?.let { context.getString(R.string.chapter_progress, ShelfFormat.percent(it)) },
                 page?.takeIf { total > 0 }?.let { "$it / $total" },
             ).joinToString("  "),
             contentColor,
@@ -170,5 +171,5 @@ internal val BATTERY_LOW = Color(0xFFE53935)
 private fun clockLabels(context: Context, millis: Long): Pair<String, String> {
     val time = LocalDateTime.ofInstant(Instant.ofEpochMilli(millis), ZoneId.systemDefault())
     val pattern = if (DateFormat.is24HourFormat(context)) "HH:mm" else "h:mm"
-    return time.format(DateTimeFormatter.ofPattern(pattern)) to "${time.monthValue}月${time.dayOfMonth}日"
+    return time.format(DateTimeFormatter.ofPattern(pattern)) to context.getString(R.string.month_day, time.monthValue, time.dayOfMonth)
 }

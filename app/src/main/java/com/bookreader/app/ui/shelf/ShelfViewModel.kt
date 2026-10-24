@@ -1,13 +1,16 @@
 package com.bookreader.app.ui.shelf
 
 import android.content.ContentResolver
+import android.content.Context
 import android.net.Uri
 import android.os.SystemClock
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider.AndroidViewModelFactory.Companion.APPLICATION_KEY
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
+import com.bookreader.app.R
 import com.bookreader.app.container
 import com.bookreader.app.data.Book
 import com.bookreader.app.data.BookRepository
@@ -15,6 +18,7 @@ import com.bookreader.app.data.SettingsRepository
 import com.bookreader.app.data.StatsRepository
 import com.bookreader.app.data.displayName
 import com.bookreader.app.reader.ReaderRepository
+import java.io.IOException
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.Channel
@@ -28,7 +32,6 @@ import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import java.io.IOException
 
 /** Shelf item: book + cover path + total seconds spent reading it */
 data class ShelfItem(val book: Book, val coverPath: String?, val readSeconds: Long = 0)
@@ -76,7 +79,10 @@ class ShelfViewModel(
     private val reader: ReaderRepository,
     private val settings: SettingsRepository,
     private val resolver: ContentResolver,
+    private val context: Context,
 ) : ViewModel() {
+    private val strings get() = ContextCompat.getContextForLanguage(context).resources
+
 
     private val query = MutableStateFlow("")
     private val busy = MutableStateFlow(false)
@@ -165,11 +171,11 @@ class ShelfViewModel(
     fun importBook(uri: Uri) = launchBusy {
         // Opening a document can block while a cloud provider downloads it
         val (input, name) = withContext(Dispatchers.IO) {
-            (resolver.openInputStream(uri) ?: throw IOException("无法读取文件")) to resolver.displayName(uri)
+            (resolver.openInputStream(uri) ?: throw IOException(strings.getString(R.string.file_read_failed))) to resolver.displayName(uri)
         }
         // Comics have no title of their own, so the file name stands in
-        val book = books.import(input, fallbackTitle = name?.substringBeforeLast('.')?.ifBlank { null } ?: "未命名")
-        message.value = "已导入《${book.title}》"
+        val book = books.import(input, fallbackTitle = name?.substringBeforeLast('.')?.ifBlank { null } ?: strings.getString(R.string.untitled))
+        message.value = strings.getString(R.string.book_imported, book.title)
     }
 
     fun delete(list: List<Book>) = launchBusy { list.forEach { books.remove(it) } }
@@ -180,7 +186,7 @@ class ShelfViewModel(
     /** Dropped onto an existing group, or picked with the group's add tile; books from another group move here */
     fun addToGroup(ids: List<String>, name: String) = launchCatching {
         books.setGroup(ids, name)
-        message.value = if (ids.size == 1) "已移入「$name」" else "已将 ${ids.size} 本移入「$name」"
+        message.value = if (ids.size == 1) strings.getString(R.string.moved_to_group, name) else strings.getString(R.string.books_moved_to_group, ids.size, name)
     }
 
     /** Removes books from their group; passing all of a group's books ungroups it */
@@ -222,7 +228,7 @@ class ShelfViewModel(
                 val app = this[APPLICATION_KEY]!!
                 ShelfViewModel(
                     app.container.books, app.container.stats, app.container.reader,
-                    app.container.settings, app.contentResolver,
+                    app.container.settings, app.contentResolver, app,
                 )
             }
         }

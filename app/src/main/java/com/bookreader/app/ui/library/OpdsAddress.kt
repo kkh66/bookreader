@@ -12,15 +12,17 @@ data class OpdsAddress(
     val path: String = DEFAULT_PATH,
 ) {
     /** Hint when the address field contains something it shouldn't; empty is not an error */
-    val hostError: String?
+    val hostError: HostError?
         get() {
             val host = host.trim()
             return when {
-                host.any { it.isWhitespace() || it in "/?#@" } -> "这里只填域名或 IP"
-                ':' in host && !host.isIpv6() -> "端口请填在右边"
+                host.any { it.isWhitespace() || it in "/?#@" } -> HostError.Address
+                ':' in host && !host.isIpv6() -> HostError.Port
                 else -> null
             }
         }
+
+    enum class HostError { Address, Port }
 
     val portError: Boolean get() = port.isNotEmpty() && port.toIntOrNull() !in 1..65535
 

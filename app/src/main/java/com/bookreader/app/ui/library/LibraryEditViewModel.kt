@@ -1,10 +1,13 @@
 package com.bookreader.app.ui.library
 
+import android.content.Context
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider.AndroidViewModelFactory.Companion.APPLICATION_KEY
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
+import com.bookreader.app.R
 import com.bookreader.app.container
 import com.bookreader.app.data.LibraryRepository
 import com.bookreader.app.data.OpdsLibrary
@@ -16,7 +19,9 @@ import kotlinx.coroutines.launch
 /**
  * Add / edit a library
  */
-class LibraryEditViewModel(private val libraries: LibraryRepository) : ViewModel() {
+class LibraryEditViewModel(private val libraries: LibraryRepository, private val context: Context) : ViewModel() {
+    private val strings get() = ContextCompat.getContextForLanguage(context).resources
+
 
     private val _error = MutableStateFlow<String?>(null)
     val error = _error.asStateFlow()
@@ -40,14 +45,14 @@ class LibraryEditViewModel(private val libraries: LibraryRepository) : ViewModel
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                _error.value = "保存书库失败：${e.message.orEmpty()}"
+                _error.value = strings.getString(R.string.library_save_failed, e.message.orEmpty())
             }
         }
     }
 
     companion object {
         val Factory = viewModelFactory {
-            initializer { LibraryEditViewModel(this[APPLICATION_KEY]!!.container.libraries) }
+            initializer { LibraryEditViewModel(this[APPLICATION_KEY]!!.container.libraries, this[APPLICATION_KEY]!!) }
         }
     }
 }

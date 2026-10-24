@@ -1,10 +1,10 @@
 package com.bookreader.app.data.opds
 
 import com.bookreader.app.data.BookFormat
+import java.net.URL
 import org.jsoup.Jsoup
 import org.jsoup.nodes.Element
 import org.jsoup.parser.Parser
-import java.net.URL
 
 sealed interface OpdsEntry {
     val title: String
@@ -75,9 +75,9 @@ object OpdsParser {
         "application/vnd.comicbook+zip" to "CBZ",
     )
 
-    fun parse(xml: String, feedUrl: String): OpdsPage {
+    fun parse(xml: String, feedUrl: String, invalidFeedMessage: String = "不是 OPDS feed"): OpdsPage {
         val feed = Jsoup.parse(xml, feedUrl, Parser.xmlParser()).selectFirst("feed")
-            ?: throw IllegalArgumentException("不是 OPDS feed")
+            ?: throw IllegalArgumentException(invalidFeedMessage)
         val next = feed.childrenNamed("link").firstOrNull { it.attr("rel") == "next" }
         return OpdsPage(
             title = feed.childText("title"),

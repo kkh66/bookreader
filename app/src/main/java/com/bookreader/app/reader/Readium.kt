@@ -1,7 +1,11 @@
 package com.bookreader.app.reader
 
 import android.content.Context
+import androidx.core.content.ContextCompat
+import com.bookreader.app.R
 import com.bookreader.app.data.BookFormat
+import java.io.File
+import java.io.IOException
 import org.readium.adapter.pdfium.document.PdfiumDocumentFactory
 import org.readium.r2.shared.publication.Link
 import org.readium.r2.shared.publication.Publication
@@ -16,14 +20,14 @@ import org.readium.r2.shared.util.mediatype.MediaType
 import org.readium.r2.shared.util.resource.Resource
 import org.readium.r2.streamer.PublicationOpener
 import org.readium.r2.streamer.parser.DefaultPublicationParser
-import java.io.File
-import java.io.IOException
 
 /**
  * Readium components for opening EPUB, PDF and CBZ (following the official Readium getting-started guide)
  * PDFs are parsed and rendered with the PDFium adapter
  */
-class Readium(context: Context) {
+class Readium(private val context: Context) {
+    private val strings get() = ContextCompat.getContextForLanguage(context).resources
+
 
     private val httpClient = DefaultHttpClient()
     private val assetRetriever = AssetRetriever(context.contentResolver, httpClient)
@@ -51,11 +55,11 @@ class Readium(context: Context) {
     /** [fonts] are added to the publication as extra resources so the reader's stylesheet can load them */
     suspend fun open(file: File, fonts: List<FontFile> = emptyList()): Publication {
         val asset = assetRetriever.retrieve(file)
-            .getOrElse { throw IOException("无法读取文件: ${it.message}") }
+            .getOrElse { throw IOException(strings.getString(R.string.file_read_error, it.message)) }
         return opener.open(asset, allowUserInteraction = false, onCreatePublication = { addFonts(fonts) })
             .getOrElse {
                 asset.close()
-                throw IOException("无法解析文件: ${it.message}")
+                throw IOException(strings.getString(R.string.file_parse_error, it.message))
             }
     }
 }

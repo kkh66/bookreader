@@ -53,15 +53,18 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.layout.Layout
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.bookreader.app.R
 import com.bookreader.app.data.Highlight
 import com.bookreader.app.data.HighlightKind
 import com.bookreader.app.ui.components.Space
+import kotlin.math.roundToInt
 import kotlinx.parcelize.Parcelize
 import org.json.JSONObject
 import org.readium.r2.navigator.Decoration
@@ -69,7 +72,6 @@ import org.readium.r2.navigator.html.HtmlDecorationTemplate
 import org.readium.r2.navigator.html.HtmlDecorationTemplates
 import org.readium.r2.navigator.html.toCss
 import org.readium.r2.shared.publication.Locator
-import kotlin.math.roundToInt
 
 /** Highlight colors, indexed by [Highlight.color] */
 internal val HIGHLIGHT_COLORS = listOf(
@@ -173,6 +175,7 @@ internal fun MarkMenu(
     onShare: () -> Unit,
     onWebSearch: () -> Unit,
 ) {
+    val context = LocalContext.current
     val kind = current?.kind ?: lastKind
     val color = current?.color ?: lastColor
     val gap = with(LocalDensity.current) { 12.dp.roundToPx() }
@@ -200,22 +203,22 @@ internal fun MarkMenu(
                 }
                 HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                 Row(Modifier.padding(horizontal = Space.XS)) {
-                    MenuAction("复制", onCopy)
+                    MenuAction(context.getString(R.string.copy), onCopy)
                     if (current == null) {
-                        MenuAction("高亮", onHighlight)
-                        MenuAction("标注", onNote)
+                        MenuAction(context.getString(R.string.highlight), onHighlight)
+                        MenuAction(context.getString(R.string.annotate), onNote)
                     } else {
-                        MenuAction("笔记", onNote)
-                        MenuAction("删除", onDelete)
+                        MenuAction(context.getString(R.string.notes), onNote)
+                        MenuAction(context.getString(R.string.delete), onDelete)
                     }
-                    MenuAction("词典", onDictionary)
+                    MenuAction(context.getString(R.string.dictionary), onDictionary)
                     Box {
                         var more by remember { mutableStateOf(false) }
-                        MenuAction("更多") { more = true }
+                        MenuAction(context.getString(R.string.more)) { more = true }
                         DropdownMenu(expanded = more, onDismissRequest = { more = false }) {
-                            DropdownMenuItem(text = { Text("书内搜索") }, onClick = { more = false; onSearch() })
-                            DropdownMenuItem(text = { Text("分享") }, onClick = { more = false; onShare() })
-                            DropdownMenuItem(text = { Text("网页搜索") }, onClick = { more = false; onWebSearch() })
+                            DropdownMenuItem(text = { Text(context.getString(R.string.search_in_book)) }, onClick = { more = false; onSearch() })
+                            DropdownMenuItem(text = { Text(context.getString(R.string.share)) }, onClick = { more = false; onShare() })
+                            DropdownMenuItem(text = { Text(context.getString(R.string.web_search)) }, onClick = { more = false; onWebSearch() })
                         }
                     }
                 }
@@ -295,10 +298,11 @@ private fun MenuAction(text: String, onClick: () -> Unit) {
 /** Edits a highlight's note, showing the marked text above the field; what's typed survives the activity being recreated */
 @Composable
 internal fun NoteDialog(highlight: Highlight, onSave: (String) -> Unit, onDismiss: () -> Unit) {
+    val context = LocalContext.current
     var note by rememberSaveable(highlight.id) { mutableStateOf(highlight.note) }
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("笔记") },
+        title = { Text(context.getString(R.string.notes)) },
         text = {
             Column {
                 // Quoted text with a bar in the highlight's color
@@ -315,14 +319,14 @@ internal fun NoteDialog(highlight: Highlight, onSave: (String) -> Unit, onDismis
                 OutlinedTextField(
                     value = note,
                     onValueChange = { note = it },
-                    placeholder = { Text("写点什么…") },
+                    placeholder = { Text(context.getString(R.string.note_hint)) },
                     minLines = 3,
                     modifier = Modifier.fillMaxWidth().padding(top = Space.M).focusRequester(focus),
                 )
             }
         },
-        confirmButton = { TextButton(onClick = { onSave(note.trim()) }) { Text("保存", fontWeight = FontWeight.SemiBold) } },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("取消") } },
+        confirmButton = { TextButton(onClick = { onSave(note.trim()) }) { Text(context.getString(R.string.save), fontWeight = FontWeight.SemiBold) } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(context.getString(R.string.cancel)) } },
     )
 }
 
@@ -331,7 +335,7 @@ internal object TextActions {
 
     fun copy(context: Context, text: String) {
         context.getSystemService(ClipboardManager::class.java)?.setPrimaryClip(ClipData.newPlainText("BookReader", text))
-        Toast.makeText(context, "已复制", Toast.LENGTH_SHORT).show()
+        Toast.makeText(context, context.getString(R.string.copied), Toast.LENGTH_SHORT).show()
     }
 
     /** Hands the text to dictionary / translate apps through Android's "process text" action */
@@ -341,21 +345,21 @@ internal object TextActions {
             .putExtra(Intent.EXTRA_PROCESS_TEXT, text)
             .putExtra(Intent.EXTRA_PROCESS_TEXT_READONLY, true)
         if (context.packageManager.queryIntentActivities(intent, 0).isEmpty()) {
-            Toast.makeText(context, "没有找到词典或翻译应用", Toast.LENGTH_SHORT).show()
+            Toast.makeText(context, context.getString(R.string.no_dictionary), Toast.LENGTH_SHORT).show()
             return
         }
-        context.startActivity(Intent.createChooser(intent, "查词"))
+        context.startActivity(Intent.createChooser(intent, context.getString(R.string.lookup)))
     }
 
     fun share(context: Context, text: String) {
         val intent = Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT, text)
-        context.startActivity(Intent.createChooser(intent, "分享"))
+        context.startActivity(Intent.createChooser(intent, context.getString(R.string.share)))
     }
 
     fun webSearch(context: Context, text: String) {
         val search = Intent(Intent.ACTION_WEB_SEARCH).putExtra(SearchManager.QUERY, text)
         val fallback = Intent(Intent.ACTION_VIEW, Uri.parse("https://www.google.com/search?q=${Uri.encode(text)}"))
         runCatching { context.startActivity(search) }.recoverCatching { context.startActivity(fallback) }
-            .onFailure { Toast.makeText(context, "没有可用的浏览器", Toast.LENGTH_SHORT).show() }
+            .onFailure { Toast.makeText(context, context.getString(R.string.no_browser), Toast.LENGTH_SHORT).show() }
     }
 }

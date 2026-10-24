@@ -19,6 +19,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
@@ -27,6 +28,7 @@ import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import com.bookreader.app.R
 import com.bookreader.app.ui.components.PagePadding
 import com.bookreader.app.ui.components.SearchHeader
 import com.bookreader.app.ui.components.Space
@@ -59,6 +61,7 @@ internal fun ReaderSearchDialog(
     onOpen: (Locator) -> Unit,
     onDismiss: () -> Unit,
 ) {
+    val context = LocalContext.current
     val secondary = MaterialTheme.colorScheme.onSurfaceVariant
     Dialog(
         onDismissRequest = onDismiss,
@@ -69,7 +72,7 @@ internal fun ReaderSearchDialog(
                 SearchHeader(
                     query = state.query,
                     onQueryChange = onQueryChange,
-                    placeholder = "搜索书中内容",
+                    placeholder = context.getString(R.string.search_book_hint),
                     onClose = onDismiss,
                     horizontalPadding = Space.L,
                     onSearch = onSearch,
@@ -78,11 +81,11 @@ internal fun ReaderSearchDialog(
                     if (state.running) LinearProgressIndicator(Modifier.fillMaxWidth().padding(bottom = Space.S))
                     val status = when {
                         state.error != null -> state.error
-                        state.searched == null -> "输入关键字后按键盘上的搜索"
-                        state.running -> "已找到 ${state.results.size} 条…"
-                        state.results.isEmpty() -> "没有找到「${state.searched}」"
-                        state.truncated -> "结果太多，只显示前 $MAX_RESULTS 条"
-                        else -> "共 ${state.results.size} 条"
+                        state.searched == null -> context.getString(R.string.search_book_instruction)
+                        state.running -> context.getString(R.string.search_found, state.results.size)
+                        state.results.isEmpty() -> context.getString(R.string.search_no_match, state.searched)
+                        state.truncated -> context.getString(R.string.search_truncated, MAX_RESULTS)
+                        else -> context.getString(R.string.search_result_count, state.results.size)
                     }
                     Text(
                         status.orEmpty(), fontSize = 13.sp,

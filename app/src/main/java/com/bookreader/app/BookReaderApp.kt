@@ -8,10 +8,10 @@ import com.bookreader.app.data.LibraryRepository
 import com.bookreader.app.data.SettingsRepository
 import com.bookreader.app.data.StatsRepository
 import com.bookreader.app.data.opds.OpdsRepository
-import com.bookreader.app.reader.Readium
 import com.bookreader.app.reader.ReaderRepository
-import okhttp3.OkHttpClient
+import com.bookreader.app.reader.Readium
 import java.io.File
+import okhttp3.OkHttpClient
 
 class BookReaderApp : Application() {
 
@@ -30,11 +30,11 @@ class BookReaderApp : Application() {
 class AppContainer(context: Context) {
     val settings = SettingsRepository(context)
     val readium = Readium(context)
-    val books = BookRepository(File(context.filesDir, "books"), readium)
+    val books = BookRepository(File(context.filesDir, "books"), readium, context)
     val stats = StatsRepository(File(context.filesDir, "stats.json"))
     val libraries = LibraryRepository(File(context.filesDir, "libraries.json"), settings)
-    val opds = OpdsRepository(OkHttpClient())
-    val fonts = FontRepository(File(context.filesDir, "fonts"))
+    val opds = OpdsRepository(OkHttpClient(), context)
+    val fonts = FontRepository(File(context.filesDir, "fonts"), context)
     val reader = ReaderRepository(readium, books, fonts)
 }
 

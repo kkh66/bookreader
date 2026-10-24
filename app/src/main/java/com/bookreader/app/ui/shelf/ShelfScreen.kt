@@ -1,7 +1,7 @@
 package com.bookreader.app.ui.shelf
 
-import androidx.compose.foundation.background
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -54,6 +54,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.bookreader.app.R
 import com.bookreader.app.data.Book
 import com.bookreader.app.data.BookFormat
 import com.bookreader.app.reader.ReaderActivity
@@ -64,9 +65,9 @@ import com.bookreader.app.ui.components.Gap
 import com.bookreader.app.ui.components.PageHeader
 import com.bookreader.app.ui.components.PagePadding
 import com.bookreader.app.ui.components.ProgressLine
+import com.bookreader.app.ui.components.SearchHeader
 import com.bookreader.app.ui.components.Space
 import com.bookreader.app.ui.components.SurfaceCard
-import com.bookreader.app.ui.components.SearchHeader
 import com.bookreader.app.ui.theme.AppIcons
 
 @Composable
@@ -126,12 +127,12 @@ fun ShelfScreen(
                     SearchHeader(
                         query = state.query,
                         onQueryChange = viewModel::setQuery,
-                        placeholder = "搜索书名或作者",
+                        placeholder = context.getString(R.string.shelf_search_hint),
                         onClose = closeSearch,
                         horizontalPadding = 0.dp,
                     )
-                } else PageHeader("书架", horizontalPadding = 0.dp) {
-                    CircleIconButton(AppIcons.Search, "搜索") { searching = true }
+                } else PageHeader(context.getString(R.string.shelf), horizontalPadding = 0.dp) {
+                    CircleIconButton(AppIcons.Search, context.getString(R.string.search)) { searching = true }
                 }
             }
             if (state.busy) fullLine { LinearProgressIndicator(Modifier.fillMaxWidth().padding(top = Space.S)) }
@@ -140,7 +141,7 @@ fun ShelfScreen(
             if (current != null && !searching) {
                 fullLine {
                     Column(Modifier.padding(top = Space.XL)) {
-                        Text("继续阅读", fontSize = 24.sp, fontWeight = FontWeight.Bold)
+                        Text(context.getString(R.string.continue_reading), fontSize = 24.sp, fontWeight = FontWeight.Bold)
                         Gap(Space.M)
                         ContinueCard(current, loading = openingId == current.book.id) { viewModel.open(current.book) }
                     }
@@ -225,7 +226,7 @@ fun ShelfScreen(
 
     pendingGroup?.let { ids ->
         GroupNameDialog(
-            title = "新建分组",
+            title = context.getString(R.string.new_group),
             initial = "",
             onConfirm = { name ->
                 viewModel.createGroup(ids, name)
@@ -238,8 +239,8 @@ fun ShelfScreen(
     pendingDelete?.let { books ->
         AlertDialog(
             onDismissRequest = { pendingDelete = null },
-            title = { Text(if (books.size == 1) "删除《${books[0].title}》？" else "删除 ${books.size} 本书？") },
-            text = { Text("会同时删除本地文件和阅读进度") },
+            title = { Text(if (books.size == 1) context.getString(R.string.delete_book_confirm, books[0].title) else context.getString(R.string.delete_books_confirm, books.size)) },
+            text = { Text(context.getString(R.string.delete_book_hint)) },
             confirmButton = {
                 TextButton(onClick = {
                     // Deleting every book left in the open group removes the group, so its dialog closes too
@@ -247,9 +248,9 @@ fun ShelfScreen(
                     if (group != null && group.items.all { it.book.id in ids }) openGroup = null
                     viewModel.delete(books)
                     pendingDelete = null
-                }) { Text("删除") }
+                }) { Text(context.getString(R.string.delete)) }
             },
-            dismissButton = { TextButton(onClick = { pendingDelete = null }) { Text("取消") } },
+            dismissButton = { TextButton(onClick = { pendingDelete = null }) { Text(context.getString(R.string.cancel)) } },
         )
     }
 }
@@ -263,6 +264,7 @@ private fun percent(progress: Double) = ShelfFormat.percent(progress)
 /** Continue reading: a compact one-row card, clickable as a whole */
 @Composable
 private fun ContinueCard(item: ShelfItem, loading: Boolean, onContinue: () -> Unit) {
+    val context = LocalContext.current
     val book = item.book
     val secondary = MaterialTheme.colorScheme.onSurfaceVariant
     SurfaceCard(onClick = onContinue) {
@@ -285,7 +287,7 @@ private fun ContinueCard(item: ShelfItem, loading: Boolean, onContinue: () -> Un
                 Modifier.size(44.dp).clip(CircleShape).background(MaterialTheme.colorScheme.primary),
                 contentAlignment = Alignment.Center,
             ) {
-                Icon(AppIcons.ArrowForward, "继续阅读", Modifier.size(20.dp), tint = MaterialTheme.colorScheme.onPrimary)
+                Icon(AppIcons.ArrowForward, context.getString(R.string.continue_reading), Modifier.size(20.dp), tint = MaterialTheme.colorScheme.onPrimary)
             }
         }
     }
@@ -293,13 +295,14 @@ private fun ContinueCard(item: ShelfItem, loading: Boolean, onContinue: () -> Un
 
 @Composable
 private fun AllBooksHeader(count: Int, grid: Boolean, onGridChange: (Boolean) -> Unit) {
+    val context = LocalContext.current
     Row(Modifier.padding(top = Space.XL, bottom = Space.M), verticalAlignment = Alignment.CenterVertically) {
         Column(Modifier.weight(1f)) {
-            Text("全部书籍", fontSize = 24.sp, fontWeight = FontWeight.Bold)
-            Text("${count}本", fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(context.getString(R.string.all_books), fontSize = 24.sp, fontWeight = FontWeight.Bold)
+            Text(context.getString(R.string.book_count, count), fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
-        ModeIcon(AppIcons.Grid, "网格", selected = grid) { onGridChange(true) }
-        ModeIcon(AppIcons.List, "列表", selected = !grid) { onGridChange(false) }
+        ModeIcon(AppIcons.Grid, context.getString(R.string.grid), selected = grid) { onGridChange(true) }
+        ModeIcon(AppIcons.List, context.getString(R.string.list), selected = !grid) { onGridChange(false) }
     }
 }
 
@@ -337,6 +340,7 @@ private fun GridBook(item: ShelfItem, highlighted: Boolean, loading: Boolean, mo
 /** List row: cover + title (two lines) + author + progress bar + reading time/speed + date range + overflow menu */
 @Composable
 private fun ListBook(item: ShelfItem, highlighted: Boolean, loading: Boolean, modifier: Modifier, onDelete: () -> Unit) {
+    val context = LocalContext.current
     val book = item.book
     val secondary = MaterialTheme.colorScheme.onSurfaceVariant
     var menu by remember { mutableStateOf(false) }
@@ -354,11 +358,11 @@ private fun ListBook(item: ShelfItem, highlighted: Boolean, loading: Boolean, mo
                 )
                 Box {
                     Icon(
-                        AppIcons.MoreVert, "更多", tint = secondary,
+                        AppIcons.MoreVert, context.getString(R.string.more), tint = secondary,
                         modifier = Modifier.size(32.dp).clip(CircleShape).clickable { menu = true }.padding(Space.XS),
                     )
                     DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
-                        DropdownMenuItem(text = { Text("删除") }, onClick = { menu = false; onDelete() })
+                        DropdownMenuItem(text = { Text(context.getString(R.string.delete)) }, onClick = { menu = false; onDelete() })
                     }
                 }
             }
@@ -374,31 +378,36 @@ private fun ListBook(item: ShelfItem, highlighted: Boolean, loading: Boolean, mo
             Gap(Space.S)
             // Reading speed counts characters, so PDF / CBZ show their format instead
             val reading = if (book.format == BookFormat.EPUB) {
-                ShelfFormat.readingLine(item.readSeconds, book.progress, book.totalChars)
+                ShelfFormat.readingLine(item.readSeconds, book.progress, book.totalChars, context.getString(R.string.hours_format), context.getString(R.string.reading_line_format))
             } else {
-                "${ShelfFormat.readingHours(item.readSeconds)} · ${book.format.label}"
+                "${ShelfFormat.readingHours(item.readSeconds, context.getString(R.string.hours_format))} · ${book.format.label}"
             }
             Text(reading, fontSize = 12.sp, color = secondary)
-            ShelfFormat.dateRange(book.firstReadAt, book.lastReadAt)?.let {
+            ShelfFormat.dateRange(book.firstReadAt, book.lastReadAt, dateFormat = context.getString(R.string.date_format))?.let {
                 Text(it, fontSize = 12.sp, color = secondary)
             }
         }
     }
 }
 
-internal fun readLabel(book: Book) = if (book.lastReadAt == 0L) "未读" else "已读 ${percent(book.progress)}"
+@Composable
+internal fun readLabel(book: Book): String {
+    val context = LocalContext.current
+    return if (book.lastReadAt == 0L) context.getString(R.string.unread) else context.getString(R.string.read_progress, percent(book.progress))
+}
 
 @Composable
 private fun EmptyShelf(onOpenDiscover: () -> Unit, onImport: () -> Unit) {
+    val context = LocalContext.current
     SurfaceCard(Modifier.padding(top = Space.XL)) {
         Column(Modifier.padding(Space.XL)) {
-            Text("书架还是空的", fontSize = 20.sp, fontWeight = FontWeight.Bold)
+            Text(context.getString(R.string.empty_shelf), fontSize = 20.sp, fontWeight = FontWeight.Bold)
             Gap(Space.S)
-            Text("从 Calibre 书库下载，或导入本地 EPUB、PDF、CBZ", fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(context.getString(R.string.empty_shelf_hint), fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
             Gap(Space.L)
             Row(horizontalArrangement = Arrangement.spacedBy(Space.M)) {
-                Button(onClick = onOpenDiscover, shape = CircleShape) { Text("去 Calibre 书库") }
-                OutlinedButton(onClick = onImport, shape = CircleShape) { Text("导入书籍") }
+                Button(onClick = onOpenDiscover, shape = CircleShape) { Text(context.getString(R.string.go_to_library)) }
+                OutlinedButton(onClick = onImport, shape = CircleShape) { Text(context.getString(R.string.import_books)) }
             }
         }
     }
