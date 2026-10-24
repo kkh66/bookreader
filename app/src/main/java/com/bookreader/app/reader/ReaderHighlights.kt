@@ -41,6 +41,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -288,10 +289,10 @@ private fun MenuAction(text: String, onClick: () -> Unit) {
     )
 }
 
-/** Edits a highlight's note, showing the marked text above the field */
+/** Edits a highlight's note, showing the marked text above the field; what's typed survives the activity being recreated */
 @Composable
 internal fun NoteDialog(highlight: Highlight, onSave: (String) -> Unit, onDismiss: () -> Unit) {
-    var note by remember { mutableStateOf(highlight.note) }
+    var note by rememberSaveable(highlight.id) { mutableStateOf(highlight.note) }
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("笔记") },

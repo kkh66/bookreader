@@ -35,8 +35,8 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.compose.ui.window.DialogWindowProvider
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.bookreader.app.data.BookFormat
+import com.bookreader.app.data.ReadingStyle
 import com.bookreader.app.data.UserFont
 import com.bookreader.app.ui.components.Gap
 import com.bookreader.app.ui.components.ReadingBehaviorControls
@@ -44,17 +44,31 @@ import com.bookreader.app.ui.components.ReadingDirectionControls
 import com.bookreader.app.ui.components.ReadingStyleControls
 import com.bookreader.app.ui.components.Space
 
+/** Reading settings as the panel shows them: the text style, this book's page turn direction and the behavior switches */
+internal data class ReaderSettingsState(
+    val style: ReadingStyle = ReadingStyle(),
+    val rightToLeft: Boolean = false,
+    val volumeKeyPaging: Boolean = false,
+    val hideStatusBar: Boolean = false,
+    val openLastOnLaunch: Boolean = false,
+)
+
 /**
  * Reading settings as a bottom panel over the page, without dimming, so text style changes can be seen as they apply
  * [fonts] are the imported fonts registered when the book opened; a PDF or comic has no text style, only its page turn direction
  */
 @Composable
-internal fun ReaderSettingsDialog(viewModel: ReaderViewModel, format: BookFormat, fonts: List<UserFont>, onDismiss: () -> Unit) {
-    val style by viewModel.readingStyle.collectAsStateWithLifecycle()
-    val book by viewModel.book.collectAsStateWithLifecycle()
-    val volumeKeyPaging by viewModel.volumeKeyPaging.collectAsStateWithLifecycle()
-    val hideStatusBar by viewModel.hideStatusBar.collectAsStateWithLifecycle()
-    val openLastOnLaunch by viewModel.openLastOnLaunch.collectAsStateWithLifecycle()
+internal fun ReaderSettingsDialog(
+    format: BookFormat,
+    settings: ReaderSettingsState,
+    fonts: List<UserFont>,
+    onStyleChange: (ReadingStyle) -> Unit,
+    onRightToLeftChange: (Boolean) -> Unit,
+    onVolumeKeyPagingChange: (Boolean) -> Unit,
+    onHideStatusBarChange: (Boolean) -> Unit,
+    onOpenLastOnLaunchChange: (Boolean) -> Unit,
+    onDismiss: () -> Unit,
+) {
     var tab by rememberSaveable { mutableIntStateOf(0) }
     Dialog(
         onDismissRequest = onDismiss,
@@ -94,13 +108,13 @@ internal fun ReaderSettingsDialog(viewModel: ReaderViewModel, format: BookFormat
                 Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = Space.XL)) {
                     Gap(Space.S)
                     if (tab == 0 && format == BookFormat.EPUB) {
-                        ReadingStyleControls(style, fonts, onChange = viewModel::setReadingStyle)
+                        ReadingStyleControls(settings.style, fonts, onChange = onStyleChange)
                     } else if (tab == 0) {
-                        ReadingDirectionControls(book?.rightToLeft ?: false, onChange = viewModel::setRightToLeft)
+                        ReadingDirectionControls(settings.rightToLeft, onChange = onRightToLeftChange)
                     } else {
                         ReadingBehaviorControls(
-                            volumeKeyPaging, hideStatusBar, openLastOnLaunch,
-                            viewModel::setVolumeKeyPaging, viewModel::setHideStatusBar, viewModel::setOpenLastOnLaunch,
+                            settings.volumeKeyPaging, settings.hideStatusBar, settings.openLastOnLaunch,
+                            onVolumeKeyPagingChange, onHideStatusBarChange, onOpenLastOnLaunchChange,
                         )
                     }
                     Gap(Space.L)

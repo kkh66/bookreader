@@ -40,13 +40,11 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -70,15 +68,9 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
 import com.bookreader.app.R
-import com.bookreader.app.data.Book
 import com.bookreader.app.data.BookFormat
-import com.bookreader.app.data.Bookmark
-import com.bookreader.app.data.Highlight
-import com.bookreader.app.data.HighlightKind
 import com.bookreader.app.data.ReadingStyle
 import com.bookreader.app.data.ThemeMode
-import com.bookreader.app.data.UserFont
-import com.bookreader.app.data.bookmarkId
 import com.bookreader.app.ui.components.Space
 import com.bookreader.app.ui.shelf.ShelfFormat
 import com.bookreader.app.ui.theme.AppIcons
@@ -114,8 +106,6 @@ import org.readium.r2.navigator.preferences.ReadingProgression
 import org.readium.r2.navigator.util.DirectionalNavigationAdapter
 import org.readium.r2.shared.ExperimentalReadiumApi
 import org.readium.r2.shared.publication.Locator
-import org.readium.r2.shared.publication.Publication
-import org.readium.r2.shared.publication.services.locateProgression
 import org.readium.r2.shared.util.AbsoluteUrl
 import kotlin.math.roundToInt
 
@@ -138,15 +128,13 @@ class ReaderActivity : AppCompatActivity(), EpubNavigatorFragment.Listener {
     /** With the status bar hidden the text reaches the top edge, so the menu's top bar must leave room for the status bar itself (px) */
     private val headerInset = mutableIntStateOf(0)
 
-    /** Popup menu over the page, for a text selection or a tapped highlight */
-    private val markTarget = mutableStateOf<MarkTarget?>(null)
-
-    /** Highlight whose note is being edited */
-    private val editingNote = mutableStateOf<Highlight?>(null)
-
-    private val showingSearch = mutableStateOf(false)
-
     private var selectionWatch: Job? = null
+
+    /** Highlight taps, registered with Readium's navigator ViewModel, which outlives this activity, so removed in [onDestroy] */
+    private var highlightListener: DecorableNavigator.Listener? = null
+
+    /** The open book; only read after [onCreate] made sure there is one */
+    private val session get() = checkNotNull(viewModel.session)
 
     private val navigator get() = supportFragmentManager.findFragmentByTag(NAVIGATOR_TAG) as OverflowableNavigator
 
@@ -180,7 +168,7 @@ class ReaderActivity : AppCompatActivity(), EpubNavigatorFragment.Listener {
 
         override fun onDestroyActionMode(mode: ActionMode) {
             selectionWatch?.cancel()
-            if (markTarget.value is MarkTarget.Selection) markTarget.value = null
+            viewModel.onSelectionEnded()
         }
     }
 
@@ -224,6 +212,8 @@ class ReaderActivity : AppCompatActivity(), EpubNavigatorFragment.Listener {
         super.onCreate(savedInstanceState)
         title = session.book.title
         enableEdgeToEdge()
+        // A recreated page has lost its text selection, so a menu still open for one goes too
+        if (savedInstanceState != null) viewModel.onSelectionEnded()
 
         controlsVisible = savedInstanceState?.getBoolean(STATE_CONTROLS_VISIBLE, true) ?: true
         val controls = ComposeView(this).apply {
@@ -300,10 +290,7 @@ class ReaderActivity : AppCompatActivity(), EpubNavigatorFragment.Listener {
         navigator.addInputListener(object : InputListener {
             override fun onTap(event: TapEvent): Boolean {
                 // A tap anywhere on the page first closes an open highlight menu
-                if (markTarget.value != null) {
-                    closeMarkMenu()
-                    return true
-                }
+                if (viewModel.dismissMarkMenu()) return true
                 val width = navigator.publicationView.width
                 val edge = maxOf(TAP_EDGE_MIN, width * TAP_EDGE_RATIO)
                 val left = event.point.x <= edge
@@ -331,94 +318,110 @@ class ReaderActivity : AppCompatActivity(), EpubNavigatorFragment.Listener {
             ),
         )
 
-        epub?.addDecorationListener(HIGHLIGHT_GROUP, object : DecorableNavigator.Listener {
+        highlightListener = object : DecorableNavigator.Listener {
             override fun onDecorationActivated(event: DecorableNavigator.OnActivatedEvent): Boolean {
-                val highlight = currentBook()?.highlights?.firstOrNull { it.id == event.decoration.id } ?: return false
                 val rect = event.rect ?: event.point?.let { RectF(it.x, it.y, it.x, it.y) } ?: return false
+                if (!viewModel.openHighlightMenu(event.decoration.id, rect)) return false
                 selectionWatch?.cancel()
-                markTarget.value = MarkTarget.Existing(highlight, rect)
                 return true
             }
-        })
+        }.also { epub?.addDecorationListener(HIGHLIGHT_GROUP, it) }
+        // The menu and every panel or dialog over the page, from the ViewModel's state
         marks.setContent {
-            val book by viewModel.book.collectAsStateWithLifecycle()
+            val menu by viewModel.markMenu.collectAsStateWithLifecycle()
             val last by viewModel.lastHighlight.collectAsStateWithLifecycle()
-            val highlights = book?.highlights.orEmpty()
+            val note by viewModel.editingNote.collectAsStateWithLifecycle()
+            val image by viewModel.viewingImage.collectAsStateWithLifecycle()
+            val panel by viewModel.panel.collectAsStateWithLifecycle()
             ReaderTheme {
-                markTarget.value?.let { target ->
-                    BackHandler(onBack = ::closeMarkMenu)
-                    // Latest copy of the highlight, falling back to the one the menu opened with until the save lands
-                    val current = (target as? MarkTarget.Existing)?.let { t -> highlights.firstOrNull { it.id == t.highlight.id } ?: t.highlight }
-                    val text = current?.text ?: (target as? MarkTarget.Selection)?.locator?.text?.highlight.orEmpty()
+                menu?.let { (target, current, text) ->
+                    BackHandler(onBack = viewModel::closeMarkMenu)
+                    // Actions that hand the text to other apps close the menu once they've started
+                    fun handOff(action: (Context, String) -> Unit) {
+                        action(this, text)
+                        viewModel.closeMarkMenu()
+                    }
                     MarkMenu(
                         target = target,
                         current = current,
                         lastKind = last.first,
                         lastColor = last.second,
-                        onStyle = { kind, color -> applyMarkStyle(target, current, kind, color) },
-                        onHighlight = {
-                            (target as? MarkTarget.Selection)?.let { viewModel.createHighlight(it.locator, last.first, last.second) }
-                            closeMarkMenu()
-                        },
-                        onCopy = {
-                            TextActions.copy(this, text)
-                            closeMarkMenu()
-                        },
-                        onNote = {
-                            editingNote.value = current
-                                ?: (target as? MarkTarget.Selection)?.let { viewModel.createHighlight(it.locator, last.first, last.second) }
-                            closeMarkMenu()
-                        },
-                        onDelete = {
-                            current?.let { viewModel.removeHighlight(it.id) }
-                            closeMarkMenu()
-                        },
-                        onDictionary = {
-                            TextActions.lookUp(this, text)
-                            closeMarkMenu()
-                        },
-                        onSearch = {
-                            viewModel.setSearchQuery(text)
-                            viewModel.search()
-                            showingSearch.value = true
-                            closeMarkMenu()
-                        },
-                        onShare = {
-                            TextActions.share(this, text)
-                            closeMarkMenu()
-                        },
-                        onWebSearch = {
-                            TextActions.webSearch(this, text)
-                            closeMarkMenu()
-                        },
+                        onStyle = viewModel::applyMarkStyle,
+                        onHighlight = viewModel::highlightSelection,
+                        onCopy = { handOff(TextActions::copy) },
+                        onNote = viewModel::editMarkNote,
+                        onDelete = viewModel::deleteMarked,
+                        onDictionary = { handOff(TextActions::lookUp) },
+                        onSearch = viewModel::searchMarked,
+                        onShare = { handOff(TextActions::share) },
+                        onWebSearch = { handOff(TextActions::webSearch) },
                     )
                 }
-                editingNote.value?.let { editing ->
-                    val highlight = highlights.firstOrNull { it.id == editing.id } ?: editing
-                    NoteDialog(
-                        highlight,
-                        onSave = { note ->
-                            viewModel.saveHighlight(highlight.copy(note = note))
-                            editingNote.value = null
-                        },
-                        onDismiss = { editingNote.value = null },
-                    )
-                }
-                val image by viewModel.viewingImage.collectAsStateWithLifecycle()
+                note?.let { NoteDialog(it, onSave = viewModel::saveNote, onDismiss = viewModel::closeNote) }
                 image?.let { ImageViewer(it, onDismiss = viewModel::closeImage) }
+                when (panel) {
+                    ReaderPanel.Contents -> {
+                        val book by viewModel.book.collectAsStateWithLifecycle()
+                        val bookmarks by viewModel.bookmarks.collectAsStateWithLifecycle()
+                        val chapterPages by viewModel.chapterPages.collectAsStateWithLifecycle()
+                        val currentChapter by viewModel.currentChapter.collectAsStateWithLifecycle()
+                        ReaderNavigation(
+                            chapters = viewModel.chapters,
+                            chapterPages = chapterPages,
+                            currentChapter = currentChapter,
+                            onOpenChapter = ::openChapter,
+                            bookmarks = bookmarks,
+                            onOpenBookmark = { goTo(it.locator, "无法跳转到此书签") },
+                            onRemoveBookmark = { viewModel.removeBookmark(it.id) },
+                            // Notes come from selecting text, which only EPUB has
+                            highlights = book?.highlights?.takeIf { viewModel.format == BookFormat.EPUB },
+                            onOpenHighlight = { goTo(it.locator, "无法跳转到此笔记") },
+                            onRemoveHighlight = { viewModel.removeHighlight(it.id) },
+                            onDismiss = viewModel::closePanel,
+                        )
+                    }
+                    ReaderPanel.Settings -> {
+                        val settings by viewModel.settingsState.collectAsStateWithLifecycle()
+                        ReaderSettingsDialog(
+                            format = viewModel.format,
+                            settings = settings,
+                            fonts = viewModel.fonts,
+                            onStyleChange = viewModel::setReadingStyle,
+                            onRightToLeftChange = viewModel::setRightToLeft,
+                            onVolumeKeyPagingChange = viewModel::setVolumeKeyPaging,
+                            onHideStatusBarChange = viewModel::setHideStatusBar,
+                            onOpenLastOnLaunchChange = viewModel::setOpenLastOnLaunch,
+                            onDismiss = viewModel::closePanel,
+                        )
+                    }
+                    ReaderPanel.Search -> {
+                        val search by viewModel.searchState.collectAsStateWithLifecycle()
+                        ReaderSearchDialog(
+                            state = search,
+                            onQueryChange = viewModel::setSearchQuery,
+                            onSearch = ::runSearch,
+                            onOpen = ::openSearchHit,
+                            onDismiss = viewModel::closePanel,
+                        )
+                    }
+                    null -> Unit
+                }
             }
         }
         footer.setContent {
-            val locator by navigator.currentLocator.collectAsStateWithLifecycle()
+            val locator by viewModel.locator.collectAsStateWithLifecycle()
+            val total by viewModel.totalPages.collectAsStateWithLifecycle()
             val mode by viewModel.themeMode.collectAsStateWithLifecycle()
             val night = mode.isDark()
-            ReaderFooter(
-                publication = session.publication,
-                locator = locator,
-                background = Color(pageBackground(night)),
-                contentColor = Color(if (night) DARK_TEXT else LIGHT_TEXT).copy(alpha = 0.55f),
-                chapterProgress = session.format == BookFormat.EPUB,
-            )
+            locator?.let {
+                ReaderFooter(
+                    locator = it,
+                    total = total,
+                    chapterProgress = viewModel.format == BookFormat.EPUB,
+                    background = Color(pageBackground(night)),
+                    contentColor = Color(if (night) DARK_TEXT else LIGHT_TEXT).copy(alpha = 0.55f),
+                )
+            }
         }
         controls.setContent {
             val topInset = with(LocalDensity.current) { headerInset.intValue.toDp() }
@@ -426,40 +429,24 @@ class ReaderActivity : AppCompatActivity(), EpubNavigatorFragment.Listener {
                 ReaderHeader(
                     session.book.title, topInset, onBack = ::finish,
                     // Only EPUB text can be searched
-                    onSearch = if (session.format == BookFormat.EPUB) ({ showingSearch.value = true }) else null,
+                    onSearch = if (viewModel.format == BookFormat.EPUB) ({ viewModel.showPanel(ReaderPanel.Search) }) else null,
                 )
             }
         }
         bottomControls.setContent {
-            val currentBook by viewModel.book.collectAsStateWithLifecycle()
-            val locator by navigator.currentLocator.collectAsStateWithLifecycle()
-            val book = currentBook ?: session.book
+            val locator by viewModel.locator.collectAsStateWithLifecycle()
+            val bookmarked by viewModel.bookmarked.collectAsStateWithLifecycle()
             ReaderTheme {
                 ReaderControls(
-                    book = book,
-                    publication = session.publication,
-                    format = session.format,
-                    navigator = navigator,
-                    locator = locator,
-                    onMessage = ::showMessage,
-                    onToggle = { viewModel.toggleBookmark(locator) },
-                    onOpen = { bookmark ->
-                        val target = runCatching { Locator.fromJSON(JSONObject(bookmark.locator)) }.getOrNull()
-                        val opened = target != null && navigator.go(target)
-                        if (!opened) showMessage("无法跳转到此书签")
-                        opened
-                    },
-                    onRemove = { viewModel.removeBookmark(it.id) },
-                    viewModel = viewModel,
-                    fonts = session.fonts.map { it.font },
-                    showingSearch = showingSearch,
-                    onOpenHighlight = { highlight ->
-                        val target = runCatching { Locator.fromJSON(JSONObject(highlight.locator)) }.getOrNull()
-                        val opened = target != null && navigator.go(target)
-                        if (!opened) showMessage("无法跳转到此笔记")
-                        opened
-                    },
-                    onRemoveHighlight = { viewModel.removeHighlight(it.id) },
+                    progress = (locator?.locations?.totalProgression ?: 0.0).toFloat(),
+                    bookmarked = bookmarked,
+                    hasChapters = viewModel.chapters.isNotEmpty(),
+                    onPreviousChapter = { goChapter(-1) },
+                    onNextChapter = { goChapter(1) },
+                    onSeek = ::seekTo,
+                    onOpenContents = ::openContents,
+                    onToggleBookmark = viewModel::toggleBookmark,
+                    onOpenSettings = { viewModel.showPanel(ReaderPanel.Settings) },
                 )
             }
         }
@@ -467,8 +454,15 @@ class ReaderActivity : AppCompatActivity(), EpubNavigatorFragment.Listener {
         lifecycleScope.launch {
             repeatOnLifecycle(Lifecycle.State.STARTED) {
                 launch { viewModel.messages.collect(::showMessage) }
-                launch { navigator.currentLocator.collect { viewModel.saveProgress(it) } }
+                launch { navigator.currentLocator.collect { viewModel.onLocationChanged(it) } }
                 if (epub != null) {
+                    // The page's text selection lives only as long as its menu: closing the menu,
+                    // or turning the selection into a highlight, clears it
+                    launch {
+                        viewModel.markMenu.map { it?.target is MarkTarget.Selection }.distinctUntilChanged().collect { selecting ->
+                            if (!selecting) epub.clearSelection()
+                        }
+                    }
                     // Long press on illustrations: the script goes into whichever document is showing (it skips documents that already have it)
                     launch { epub.currentLocator.collectLatest { epub.evaluateJavascript(IMAGE_LONG_PRESS_SCRIPT) } }
                     // Saved highlights drawn on the page; Readium only redraws what changed
@@ -518,53 +512,95 @@ class ReaderActivity : AppCompatActivity(), EpubNavigatorFragment.Listener {
         }
     }
 
-    private fun currentBook() = viewModel.book.value
-
     /** Keeps the menu next to the selection while its handles are dragged, and closes it once the selection is gone */
     private fun watchSelection() {
         selectionWatch?.cancel()
         selectionWatch = lifecycleScope.launch {
             while (true) {
                 val selection = epubNavigator?.currentSelection()
-                if (markTarget.value !is MarkTarget.Existing) {
-                    markTarget.value = selection?.let {
+                viewModel.onSelectionChanged(
+                    selection?.let {
                         MarkTarget.Selection(it.locator, it.rect ?: RectF(0f, 0f, navigator.publicationView.width.toFloat(), 0f))
-                    }
-                }
+                    },
+                )
                 delay(SELECTION_WATCH_MS)
             }
         }
     }
 
-    /**
-     * A kind or color tapped in the menu: remembered for next time and applied to the highlight being edited;
-     * on a fresh selection it creates the highlight, and the menu stays open to keep adjusting it
-     */
-    private fun applyMarkStyle(target: MarkTarget, current: Highlight?, kind: HighlightKind, color: Int) {
-        viewModel.setLastHighlight(kind, color)
-        when {
-            current != null -> viewModel.saveHighlight(current.copy(kind = kind, color = color))
-            target is MarkTarget.Selection -> {
-                val created = viewModel.createHighlight(target.locator, kind, color)
-                selectionWatch?.cancel()
-                markTarget.value = MarkTarget.Existing(created, target.rect)
-                epubNavigator?.clearSelection()
+    /** A long-pressed illustration, shown full screen at about the screen's size */
+    private fun openImage(src: String) {
+        window.decorView.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
+        viewModel.closeMarkMenu()
+        val screen = resources.displayMetrics
+        viewModel.openImage(src, screen.widthPixels, screen.heightPixels)
+    }
+
+    // Page jumps the controls and panels ask for; the ViewModel knows where things are, the navigator goes there
+
+    /** Contents panel, marking the chapter being read once it's found */
+    private fun openContents() {
+        viewModel.showPanel(ReaderPanel.Contents)
+        lifecycleScope.launch { viewModel.setCurrentChapter(currentChapter()) }
+    }
+
+    /** In an EPUB this looks at the rendered page, so it's only worked out on demand rather than on every page turn */
+    private suspend fun currentChapter(): Int {
+        val locator = viewModel.locator.value ?: return -1
+        return currentChapterIndex(session.publication, navigator, viewModel.chapterLinks, locator)
+    }
+
+    private fun goChapter(step: Int) {
+        lifecycleScope.launch {
+            val target = adjacentChapter(viewModel.chapterLinks, currentChapter(), step)
+            when {
+                target == null -> showMessage(if (step < 0) "已经是第一章" else "已经是最后一章")
+                !navigator.go(target) -> showMessage("无法跳转到此章节")
             }
         }
     }
 
-    private fun closeMarkMenu() {
-        selectionWatch?.cancel()
-        markTarget.value = null
-        epubNavigator?.clearSelection()
+    private fun openChapter(index: Int): Boolean {
+        val opened = viewModel.chapterLinks.getOrNull(index)?.let { (link, _) -> navigator.go(link) } == true
+        if (!opened) showMessage("无法跳转到此章节")
+        return opened
     }
 
-    /** A long-pressed illustration, shown full screen at about the screen's size */
-    private fun openImage(src: String) {
-        window.decorView.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
-        closeMarkMenu()
-        val screen = resources.displayMetrics
-        viewModel.openImage(src, screen.widthPixels, screen.heightPixels)
+    /** The progress slider was released at [progression] of the whole book */
+    private suspend fun seekTo(progression: Float): Boolean {
+        val destination = viewModel.locate(progression.toDouble())
+        val opened = destination != null && navigator.go(destination)
+        if (!opened) showMessage("无法跳转到此位置")
+        return opened
+    }
+
+    /** Jumps to a saved location (a bookmark or note), with [failure] shown when it can't */
+    private fun goTo(locatorJson: String, failure: String): Boolean {
+        val target = runCatching { Locator.fromJSON(JSONObject(locatorJson)) }.getOrNull()
+        val opened = target != null && navigator.go(target)
+        if (!opened) showMessage(failure)
+        return opened
+    }
+
+    private fun runSearch() {
+        // A new search drops the previous hit's highlight from the page
+        lifecycleScope.launch { epubNavigator?.applyDecorations(emptyList(), SEARCH_GROUP) }
+        viewModel.search()
+    }
+
+    private fun openSearchHit(hit: Locator) {
+        if (!navigator.go(hit)) {
+            showMessage("无法跳转到此位置")
+            return
+        }
+        viewModel.closePanel()
+        // Mark the hit on the page so it's easy to spot after the jump
+        lifecycleScope.launch {
+            epubNavigator?.applyDecorations(
+                listOf(Decoration("search", hit, Decoration.Style.Highlight(tint = SEARCH_HIGHLIGHT.toArgb()))),
+                SEARCH_GROUP,
+            )
+        }
     }
 
     override fun onKeyDown(keyCode: Int, event: KeyEvent): Boolean {
@@ -642,6 +678,9 @@ class ReaderActivity : AppCompatActivity(), EpubNavigatorFragment.Listener {
     }
 
     override fun onDestroy() {
+        // Readium keeps highlight listeners in its navigator ViewModel, which a recreated activity reuses; without this
+        // the destroyed activity would stay referenced and keep taking the taps meant for the new one
+        highlightListener?.let { epubNavigator?.removeDecorationListener(it) }
         super.onDestroy()
         if (isFinishing) viewModel.close()
     }
@@ -724,49 +763,25 @@ private fun readerPreferences(dark: Boolean, style: ReadingStyle) = EpubPreferen
 )
 
 /**
- * Bottom menu: previous chapter / whole-book progress slider / next chapter, with contents, bookmarks and reading settings below;
- * also hosts the search dialog, opened from the top bar or the selection menu
- * A book without contents (a comic) has no chapter buttons
+ * Bottom menu: previous chapter / whole-book progress slider / next chapter, with contents, bookmark and reading settings below
+ * A book without contents (a comic) has no chapter buttons. [onSeek] jumps to a progression and returns whether it worked
  */
-@OptIn(ExperimentalReadiumApi::class)
 @Composable
 private fun ReaderControls(
-    book: Book,
-    publication: Publication,
-    format: BookFormat,
-    navigator: OverflowableNavigator,
-    locator: Locator,
-    onMessage: (String) -> Unit,
-    onToggle: () -> Unit,
-    onOpen: (Bookmark) -> Boolean,
-    onRemove: (Bookmark) -> Unit,
-    onOpenHighlight: (Highlight) -> Boolean,
-    onRemoveHighlight: (Highlight) -> Unit,
-    showingSearch: MutableState<Boolean>,
-    viewModel: ReaderViewModel,
-    fonts: List<UserFont>,
+    progress: Float,
+    bookmarked: Boolean,
+    hasChapters: Boolean,
+    onPreviousChapter: () -> Unit,
+    onNextChapter: () -> Unit,
+    onSeek: suspend (Float) -> Boolean,
+    onOpenContents: () -> Unit,
+    onToggleBookmark: () -> Unit,
+    onOpenSettings: () -> Unit,
 ) {
-    var showingNavigation by rememberSaveable { mutableStateOf(false) }
-    var showingSettings by rememberSaveable { mutableStateOf(false) }
-    val locationId = bookmarkId(locator.href.toString(), locator.locations.position, locator.locations.progression)
-    val bookmarked = book.bookmarks.any { it.id == locationId }
     val scope = rememberCoroutineScope()
-    val chapters = remember(publication) { publication.chapters() }
     // Slider position while dragging; after release and the jump, it waits a moment before handing back to the real progress so the slider doesn't snap back before the reading position updates
     var seeking by remember { mutableStateOf<Float?>(null) }
     var seekJob by remember { mutableStateOf<Job?>(null) }
-
-    // The current chapter is only accurate when read from heading positions in the page, so it's computed on button taps only, with no extra script on every page turn
-    fun goChapter(step: Int) {
-        scope.launch {
-            val current = currentChapterIndex(publication, navigator, chapters, locator)
-            val target = adjacentChapter(chapters, current, step)
-            when {
-                target == null -> onMessage(if (step < 0) "已经是第一章" else "已经是最后一章")
-                !navigator.go(target) -> onMessage("无法跳转到此章节")
-            }
-        }
-    }
 
     Surface(color = MaterialTheme.colorScheme.background) {
         Column {
@@ -783,9 +798,9 @@ private fun ReaderControls(
                 Modifier.fillMaxWidth().padding(horizontal = Space.S),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                if (chapters.isNotEmpty()) TextButton(onClick = { goChapter(-1) }) { Text("上一章") }
+                if (hasChapters) TextButton(onClick = onPreviousChapter) { Text("上一章") }
                 Slider(
-                    value = seeking ?: (locator.locations.totalProgression ?: 0.0).toFloat(),
+                    value = seeking ?: progress,
                     onValueChange = {
                         // Dragging again before the last release was handed back: don't let it reset the slider midway
                         seekJob?.cancel()
@@ -794,78 +809,29 @@ private fun ReaderControls(
                     onValueChangeFinished = {
                         seeking?.let { target ->
                             seekJob = scope.launch {
-                                val destination = publication.locateProgression(target.toDouble())
-                                if (destination == null || !navigator.go(destination)) {
-                                    onMessage("无法跳转到此位置")
-                                } else {
-                                    delay(SEEK_SETTLE_MS)
-                                }
+                                if (onSeek(target)) delay(SEEK_SETTLE_MS)
                                 seeking = null
                             }
                         }
                     },
                     modifier = Modifier.weight(1f).padding(horizontal = Space.XS),
                 )
-                if (chapters.isNotEmpty()) TextButton(onClick = { goChapter(1) }) { Text("下一章") }
+                if (hasChapters) TextButton(onClick = onNextChapter) { Text("下一章") }
             }
             Row(
                 Modifier.fillMaxWidth().padding(horizontal = Space.S, vertical = Space.XS),
                 horizontalArrangement = Arrangement.SpaceEvenly,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                IconButton(onClick = { showingNavigation = true }) { Icon(AppIcons.List, "目录与书签") }
-                IconToggleButton(checked = bookmarked, onCheckedChange = { onToggle() }) {
+                IconButton(onClick = onOpenContents) { Icon(AppIcons.List, "目录与书签") }
+                IconToggleButton(checked = bookmarked, onCheckedChange = { onToggleBookmark() }) {
                     Icon(
                         if (bookmarked) AppIcons.Check else AppIcons.Bookmark,
                         if (bookmarked) "移除当前书签" else "添加书签",
                     )
                 }
-                IconButton(onClick = { showingSettings = true }) { Icon(AppIcons.Settings, "阅读设置") }
+                IconButton(onClick = onOpenSettings) { Icon(AppIcons.Settings, "阅读设置") }
             }
         }
-    }
-    if (showingSettings) {
-        ReaderSettingsDialog(viewModel, format, fonts, onDismiss = { showingSettings = false })
-    }
-    if (showingSearch.value) {
-        val search by viewModel.searchState.collectAsStateWithLifecycle()
-        ReaderSearchDialog(
-            state = search,
-            onQueryChange = viewModel::setSearchQuery,
-            onSearch = {
-                // A new search drops the previous hit's highlight from the page
-                scope.launch { (navigator as? DecorableNavigator)?.applyDecorations(emptyList(), SEARCH_GROUP) }
-                viewModel.search()
-            },
-            onOpen = { hit ->
-                if (navigator.go(hit)) {
-                    showingSearch.value = false
-                    // Mark the hit on the page so it's easy to spot after the jump
-                    scope.launch {
-                        (navigator as? DecorableNavigator)?.applyDecorations(
-                            listOf(Decoration("search", hit, Decoration.Style.Highlight(tint = SEARCH_HIGHLIGHT.toArgb()))),
-                            SEARCH_GROUP,
-                        )
-                    }
-                } else {
-                    onMessage("无法跳转到此位置")
-                }
-            },
-            onDismiss = { showingSearch.value = false },
-        )
-    }
-    if (showingNavigation) {
-        ReaderNavigation(
-            publication = publication,
-            format = format,
-            navigator = navigator,
-            bookmarks = book.bookmarks,
-            onOpenBookmark = onOpen,
-            onRemoveBookmark = onRemove,
-            highlights = book.highlights,
-            onOpenHighlight = onOpenHighlight,
-            onRemoveHighlight = onRemoveHighlight,
-            onDismiss = { showingNavigation = false },
-        )
     }
 }

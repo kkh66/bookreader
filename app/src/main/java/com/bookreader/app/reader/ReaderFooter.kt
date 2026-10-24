@@ -17,7 +17,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
-import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -31,8 +30,6 @@ import com.bookreader.app.ui.shelf.ShelfFormat
 import com.bookreader.app.ui.theme.AppIcons
 import kotlinx.coroutines.delay
 import org.readium.r2.shared.publication.Locator
-import org.readium.r2.shared.publication.Publication
-import org.readium.r2.shared.publication.services.positions
 import java.time.Instant
 import java.time.LocalDateTime
 import java.time.ZoneId
@@ -46,15 +43,15 @@ internal val FOOTER_HEIGHT = 26.dp
  * Thin status line under the page: battery, time and date on the left; chapter progress and book page on the right
  * Pages are Readium positions (fixed chunks of the book, the same numbers as in the contents), so they don't change with font size;
  * for a PDF or a comic they are its pages, and [chapterProgress] is off since there are no chapters to be part way through
+ * [total] is 0 until the book's pages are counted
  */
 @Composable
-internal fun ReaderFooter(publication: Publication, locator: Locator, background: Color, contentColor: Color, chapterProgress: Boolean) {
+internal fun ReaderFooter(locator: Locator, total: Int, chapterProgress: Boolean, background: Color, contentColor: Color) {
     val context = LocalContext.current
     val now = rememberMinuteClock()
     // Battery changes slowly; reading it with the clock once a minute is enough
     val battery = remember(now) { batteryPercent(context) }
     val (time, date) = remember(now) { clockLabels(context, now) }
-    val total by produceState(0, publication) { value = publication.positions().size }
     val page = locator.locations.position
         ?: locator.locations.totalProgression?.takeIf { total > 0 }?.let { (it * total).roundToInt().coerceIn(1, total) }
     val chapter = locator.locations.progression?.takeIf { chapterProgress }
