@@ -33,6 +33,16 @@ android {
         }
     }
 
+    // One APK per CPU architecture: PDFium's native libraries are about 4 MB for each, and a phone only needs its own
+    splits {
+        abi {
+            isEnable = true
+            reset()
+            include("arm64-v8a", "armeabi-v7a", "x86", "x86_64")
+            isUniversalApk = false
+        }
+    }
+
     buildTypes {
         getByName("release") {
             // No minification, same as the Readium test-app, so R8 doesn't strip Readium's reflection/JS bridge code
