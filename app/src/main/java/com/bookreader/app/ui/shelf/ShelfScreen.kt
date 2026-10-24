@@ -55,6 +55,7 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.bookreader.app.data.Book
+import com.bookreader.app.data.BookFormat
 import com.bookreader.app.reader.ReaderActivity
 import com.bookreader.app.ui.components.BookCover
 import com.bookreader.app.ui.components.COVER_RATIO
@@ -71,7 +72,7 @@ import com.bookreader.app.ui.theme.AppIcons
 @Composable
 fun ShelfScreen(
     onOpenDiscover: () -> Unit,
-    onImportEpub: () -> Unit,
+    onImportBook: () -> Unit,
     viewModel: ShelfViewModel = viewModel(factory = ShelfViewModel.Factory),
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
@@ -147,7 +148,7 @@ fun ShelfScreen(
             }
 
             if (state.total == 0) {
-                fullLine { EmptyShelf(onOpenDiscover = onOpenDiscover, onImport = onImportEpub) }
+                fullLine { EmptyShelf(onOpenDiscover = onOpenDiscover, onImport = onImportBook) }
             } else {
                 fullLine {
                     AllBooksHeader(state.count, grid, viewModel::setGrid)
@@ -371,7 +372,13 @@ private fun ListBook(item: ShelfItem, highlighted: Boolean, loading: Boolean, mo
                 )
             }
             Gap(Space.S)
-            Text(ShelfFormat.readingLine(item.readSeconds, book.progress, book.totalChars), fontSize = 12.sp, color = secondary)
+            // Reading speed counts characters, so PDF / CBZ show their format instead
+            val reading = if (book.format == BookFormat.EPUB) {
+                ShelfFormat.readingLine(item.readSeconds, book.progress, book.totalChars)
+            } else {
+                "${ShelfFormat.readingHours(item.readSeconds)} · ${book.format.label}"
+            }
+            Text(reading, fontSize = 12.sp, color = secondary)
             ShelfFormat.dateRange(book.firstReadAt, book.lastReadAt)?.let {
                 Text(it, fontSize = 12.sp, color = secondary)
             }
@@ -387,11 +394,11 @@ private fun EmptyShelf(onOpenDiscover: () -> Unit, onImport: () -> Unit) {
         Column(Modifier.padding(Space.XL)) {
             Text("书架还是空的", fontSize = 20.sp, fontWeight = FontWeight.Bold)
             Gap(Space.S)
-            Text("从 Calibre 书库下载，或导入本地 EPUB", fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text("从 Calibre 书库下载，或导入本地 EPUB、PDF、CBZ", fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
             Gap(Space.L)
             Row(horizontalArrangement = Arrangement.spacedBy(Space.M)) {
                 Button(onClick = onOpenDiscover, shape = CircleShape) { Text("去 Calibre 书库") }
-                OutlinedButton(onClick = onImport, shape = CircleShape) { Text("导入 EPUB") }
+                OutlinedButton(onClick = onImport, shape = CircleShape) { Text("导入书籍") }
             }
         }
     }

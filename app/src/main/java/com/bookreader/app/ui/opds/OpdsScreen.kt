@@ -53,6 +53,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.bookreader.app.data.BookFormat
 import com.bookreader.app.data.opds.OpdsEntry
 import com.bookreader.app.reader.ReaderActivity
 import com.bookreader.app.ui.components.BackHeader
@@ -108,9 +109,9 @@ fun OpdsScreen(
                             showDivider = !last,
                             onClick = { viewModel.open(entry.url, entry.title) },
                         )
-                        is OpdsEntry.Epub -> {
+                        is OpdsEntry.Book -> {
                             val status = state.statusOf(entry)
-                            EpubRow(
+                            BookRow(
                                 entry,
                                 status = status,
                                 showDivider = !last,
@@ -154,7 +155,7 @@ fun OpdsScreen(
 
 private enum class DownloadStatus { None, Running, Done }
 
-private fun OpdsUiState.statusOf(entry: OpdsEntry.Epub) = when (entry.downloadUrl) {
+private fun OpdsUiState.statusOf(entry: OpdsEntry.Book) = when (entry.downloadUrl) {
     in downloaded -> DownloadStatus.Done
     in downloading -> DownloadStatus.Running
     else -> DownloadStatus.None
@@ -162,8 +163,8 @@ private fun OpdsUiState.statusOf(entry: OpdsEntry.Epub) = when (entry.downloadUr
 
 /** Book row: tap for details (or to read once downloaded); the icon on the right downloads directly, or reads once downloaded */
 @Composable
-private fun EpubRow(
-    entry: OpdsEntry.Epub,
+private fun BookRow(
+    entry: OpdsEntry.Book,
     status: DownloadStatus,
     showDivider: Boolean,
     loadCover: suspend (String) -> Bitmap?,
@@ -182,7 +183,10 @@ private fun EpubRow(
             Column(Modifier.weight(1f).padding(horizontal = Space.L)) {
                 Text(entry.title, fontSize = 16.sp, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis)
                 Text(
-                    entry.author, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                    // The format is only spelled out when it isn't the usual EPUB
+                    listOfNotNull(entry.author.ifBlank { null }, entry.format.label.takeIf { entry.format != BookFormat.EPUB })
+                        .joinToString(" · "),
+                    fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
@@ -214,7 +218,7 @@ private fun EpubRow(
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun BookDetailDialog(
-    entry: OpdsEntry.Epub,
+    entry: OpdsEntry.Book,
     status: DownloadStatus,
     loadCover: suspend (String) -> Bitmap?,
     onDownload: () -> Unit,

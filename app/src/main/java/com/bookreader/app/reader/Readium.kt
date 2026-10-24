@@ -1,12 +1,15 @@
 package com.bookreader.app.reader
 
 import android.content.Context
+import com.bookreader.app.data.BookFormat
+import org.readium.adapter.pdfium.document.PdfiumDocumentFactory
 import org.readium.r2.shared.publication.Link
 import org.readium.r2.shared.publication.Publication
 import org.readium.r2.shared.util.Url
 import org.readium.r2.shared.util.asset.AssetRetriever
 import org.readium.r2.shared.util.data.Container
 import org.readium.r2.shared.util.file.FileResource
+import org.readium.r2.shared.util.format.Specification
 import org.readium.r2.shared.util.getOrElse
 import org.readium.r2.shared.util.http.DefaultHttpClient
 import org.readium.r2.shared.util.mediatype.MediaType
@@ -17,15 +20,33 @@ import java.io.File
 import java.io.IOException
 
 /**
- * Readium components for opening EPUBs (following the official Readium getting-started guide)
+ * Readium components for opening EPUB, PDF and CBZ (following the official Readium getting-started guide)
+ * PDFs are parsed and rendered with the PDFium adapter
  */
 class Readium(context: Context) {
 
     private val httpClient = DefaultHttpClient()
     private val assetRetriever = AssetRetriever(context.contentResolver, httpClient)
     private val opener = PublicationOpener(
-        DefaultPublicationParser(context, httpClient, assetRetriever, pdfFactory = null)
+        DefaultPublicationParser(context, httpClient, assetRetriever, pdfFactory = PdfiumDocumentFactory(context))
     )
+
+    /** The book format by the file's content, or null for anything else; a download's file name or MIME type can't be trusted */
+    suspend fun sniff(file: File): BookFormat? {
+        val asset = assetRetriever.retrieve(file).getOrElse { return null }
+        return try {
+            val format = asset.format
+            when {
+                format.conformsTo(Specification.Epub) -> BookFormat.EPUB
+                format.conformsTo(Specification.Pdf) -> BookFormat.PDF
+                // Comics packed as RAR (CBR) are recognized too, but Readium can't open them
+                format.conformsTo(Specification.InformalComic) && format.conformsTo(Specification.Zip) -> BookFormat.CBZ
+                else -> null
+            }
+        } finally {
+            asset.close()
+        }
+    }
 
     /** [fonts] are added to the publication as extra resources so the reader's stylesheet can load them */
     suspend fun open(file: File, fonts: List<FontFile> = emptyList()): Publication {
@@ -34,7 +55,7 @@ class Readium(context: Context) {
         return opener.open(asset, allowUserInteraction = false, onCreatePublication = { addFonts(fonts) })
             .getOrElse {
                 asset.close()
-                throw IOException("无法解析 EPUB: ${it.message}")
+                throw IOException("无法解析文件: ${it.message}")
             }
     }
 }

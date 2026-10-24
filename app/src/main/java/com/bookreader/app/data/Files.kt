@@ -1,5 +1,8 @@
 package com.bookreader.app.data
 
+import android.content.ContentResolver
+import android.net.Uri
+import android.provider.OpenableColumns
 import android.util.AtomicFile
 import java.io.File
 import java.io.IOException
@@ -35,3 +38,10 @@ fun <T> File.readAtomically(decode: (String) -> T): T? {
         null
     }
 }
+
+/** File name of a picked document, e.g. 方正书宋_GBK.ttf; null when the provider doesn't say (lastPathSegment is often just an id) */
+fun ContentResolver.displayName(uri: Uri): String? = runCatching {
+    query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { cursor ->
+        if (cursor.moveToFirst()) cursor.getString(0) else null
+    }
+}.getOrNull()?.takeIf { it.isNotBlank() }

@@ -41,6 +41,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -130,12 +131,15 @@ internal fun highlightTemplates(): HtmlDecorationTemplates = HtmlDecorationTempl
     )
 }
 
-/** Inline SVG of one wave period in [tint], tiled along the bottom of each line */
-private fun wavySvg(@ColorInt tint: Int): String {
+/**
+ * Inline SVG of one wave period in [tint], tiled along the bottom of each line
+ * The brackets are percent-encoded: most EPUB pages are XHTML, where a raw `<` in the style attribute makes the whole template invalid XML and Readium drops it
+ */
+internal fun wavySvg(@ColorInt tint: Int): String {
     val hex = "%06X".format(tint and 0xFFFFFF)
     return "data:image/svg+xml;utf8," +
-        "<svg xmlns='http://www.w3.org/2000/svg' width='8' height='4'>" +
-        "<path d='M0 3 Q2 0 4 3 T8 3' fill='none' stroke='%23$hex' stroke-width='1.2'/></svg>"
+        "%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='4'%3E" +
+        "%3Cpath d='M0 3 Q2 0 4 3 T8 3' fill='none' stroke='%23$hex' stroke-width='1.2'/%3E%3C/svg%3E"
 }
 
 /** What the popup menu acts on: a fresh text selection, or a highlight that was tapped */
@@ -288,10 +292,10 @@ private fun MenuAction(text: String, onClick: () -> Unit) {
     )
 }
 
-/** Edits a highlight's note, showing the marked text above the field */
+/** Edits a highlight's note, showing the marked text above the field; what's typed survives the activity being recreated */
 @Composable
 internal fun NoteDialog(highlight: Highlight, onSave: (String) -> Unit, onDismiss: () -> Unit) {
-    var note by remember { mutableStateOf(highlight.note) }
+    var note by rememberSaveable(highlight.id) { mutableStateOf(highlight.note) }
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("笔记") },

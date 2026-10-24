@@ -75,6 +75,20 @@ fun ReadingStyleControls(style: ReadingStyle, fonts: List<UserFont>, onChange: (
     }
 }
 
+/** Page turn direction of a PDF or comic: left to right, or right to left as in Japanese manga; saved for the book */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+fun ReadingDirectionControls(rightToLeft: Boolean, onChange: (Boolean) -> Unit) {
+    Column(verticalArrangement = Arrangement.spacedBy(Space.S)) {
+        Text("翻页方向", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(Space.S), verticalArrangement = Arrangement.spacedBy(Space.S)) {
+            ChoiceChip("普通（从左往右）", selected = !rightToLeft) { onChange(false) }
+            ChoiceChip("日式（从右往左）", selected = rightToLeft) { onChange(true) }
+        }
+        Text("只对这本书生效", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+}
+
 private fun decimal(value: Double) = String.format(Locale.US, "%.2f", value).trimEnd('0').trimEnd('.')
 
 /** Pill that fills in when selected; unselected uses the page background so it shows on cards and panels */

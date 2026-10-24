@@ -17,6 +17,10 @@ dependencyResolutionManagement {
     repositories {
         google()
         mavenCentral()
+        // Readium's PDF adapter depends on PdfiumAndroid / AndroidPdfViewer, which are only published on JitPack
+        maven("https://jitpack.io") {
+            content { includeGroup("com.github.marain87") }
+        }
     }
 }
 

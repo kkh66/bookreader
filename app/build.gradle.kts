@@ -18,8 +18,8 @@ android {
         applicationId = "com.bookreader.app"
         minSdk = 24
         targetSdk = 37
-        versionCode = 18
-        versionName = "0.3.10"
+        versionCode = 19
+        versionName = "0.3.11"
     }
 
     signingConfigs {
@@ -30,6 +30,16 @@ android {
                 keyAlias = providers.gradleProperty("RELEASE_KEY_ALIAS").get()
                 keyPassword = providers.gradleProperty("RELEASE_KEY_PASSWORD").get()
             }
+        }
+    }
+
+    // One APK per CPU architecture: PDFium's native libraries are about 4 MB for each, and a phone only needs its own
+    splits {
+        abi {
+            isEnable = true
+            reset()
+            include("arm64-v8a", "armeabi-v7a", "x86", "x86_64")
+            isUniversalApk = false
         }
     }
 
@@ -69,6 +79,7 @@ dependencies {
     implementation(libs.readium.shared)
     implementation(libs.readium.streamer)
     implementation(libs.readium.navigator)
+    implementation(libs.readium.adapter.pdfium)
 
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.appcompat)

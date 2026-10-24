@@ -12,19 +12,22 @@ object ShelfFormat {
 
     fun percent(progress: Double) = "${(progress * 100).roundToInt()}%"
 
+    /** "0.97小时" (0.97 h): reading time in hours, up to two decimals */
+    fun readingHours(seconds: Long): String =
+        String.format(Locale.US, "%.2f", seconds / 3600.0).trimEnd('0').trimEnd('.') + "小时"
+
     /**
-     * "0.97小时, 1420字/分钟" (0.97 h, 1420 chars/min): reading time (hours, up to two decimals) + reading speed
+     * "0.97小时, 1420字/分钟" (0.97 h, 1420 chars/min): reading time + reading speed
      * Speed = characters read (progress × total characters) / minutes read, 0 when there is no data
      */
     fun readingLine(seconds: Long, progress: Double, totalChars: Long?): String {
-        val hours = String.format(Locale.US, "%.2f", seconds / 3600.0).trimEnd('0').trimEnd('.')
         val minutes = seconds / 60.0
         val speed = if (minutes >= 1 && totalChars != null && totalChars > 0) {
             (progress * totalChars / minutes).roundToLong()
         } else {
             0L
         }
-        return "${hours}小时, ${speed}字/分钟"
+        return "${readingHours(seconds)}, ${speed}字/分钟"
     }
 
     /**

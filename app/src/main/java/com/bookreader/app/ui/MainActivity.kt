@@ -148,11 +148,11 @@ private fun AppRoot() {
     val shelfViewModel: ShelfViewModel = viewModel(factory = ShelfViewModel.Factory)
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         uri?.let {
-            shelfViewModel.importEpub(it)
+            shelfViewModel.importBook(it)
             tab = Tab.Shelf
         }
     }
-    val importEpub = { picker.launch(arrayOf(OpdsParser.EPUB_TYPE)) }
+    val importBook = { picker.launch(OpdsParser.IMPORT_TYPES) }
     val background = MaterialTheme.colorScheme.background
     val tabStates = rememberSaveableStateHolder()
     val overlay = Modifier.fillMaxSize().background(background).systemBarsPadding()
@@ -186,12 +186,12 @@ private fun AppRoot() {
                 Box(Modifier.padding(padding)) {
                     tabStates.SaveableStateProvider(tab.name) {
                     when (tab) {
-                        Tab.Shelf -> ShelfScreen(onOpenDiscover = { tab = Tab.Discover }, onImportEpub = importEpub)
+                        Tab.Shelf -> ShelfScreen(onOpenDiscover = { tab = Tab.Discover }, onImportBook = importBook)
                         Tab.Discover -> DiscoverScreen(
                             onOpenLibrary = { libraryId = it },
                             onAddLibrary = { editLibrary = "" },
                             onEditLibrary = { editLibrary = it },
-                            onImportEpub = importEpub,
+                            onImportBook = importBook,
                         )
                         Tab.Stats -> StatsScreen()
                         Tab.Me -> MeScreen(

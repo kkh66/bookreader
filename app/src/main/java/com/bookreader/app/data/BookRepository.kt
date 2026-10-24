@@ -18,6 +18,7 @@ import org.readium.r2.shared.util.Url
 import org.readium.r2.shared.util.getOrElse
 import org.jsoup.Jsoup
 import java.io.File
+import java.io.IOException
 import java.io.InputStream
 import java.util.UUID
 import kotlin.math.roundToLong
@@ -62,10 +63,14 @@ data class Book(
     val highlights: List<Highlight> = emptyList(),
     /** Name of the user-created shelf group, null if not in a group */
     val group: String? = null,
-)
+    /** Page turns of a PDF / CBZ go right to left, as in Japanese manga */
+    val rightToLeft: Boolean = false,
+) {
+    val format: BookFormat get() = BookFormat.of(fileName)
+}
 
 /**
- * Bookshelf: EPUB files live in [dir], covers in dir/covers, metadata in dir/books.json
+ * Bookshelf: book files (EPUB / PDF / CBZ) live in [dir], covers in dir/covers, metadata in dir/books.json
  */
 class BookRepository(private val dir: File, private val readium: Readium) {
 
@@ -87,39 +92,49 @@ class BookRepository(private val dir: File, private val readium: Readium) {
     fun hasSource(source: String) = _books.value.any { it.source == source }
 
     /**
-     * Saves an EPUB stream to the shelf; title/author come from the EPUB metadata, and books that fail to parse are not added
+     * Saves an EPUB / PDF / CBZ stream to the shelf; title/author come from the book's metadata (comics have none, so [fallbackTitle]),
+     * and files that aren't one of these formats or fail to parse are not added
      */
     suspend fun import(input: InputStream, fallbackTitle: String, source: String? = null): Book {
         val id = UUID.randomUUID().toString()
-        val file = File(dir, "$id.epub")
-        // Never leave a partial file behind, whether copying fails midway (network loss, disk full, cancellation) or parsing fails
-        val publication = try {
+        val temp = File(dir, "$id.tmp")
+        var file = temp
+        // Never leave files behind when a step fails: copying (network loss, disk full, cancellation), an unsupported format,
+        // parsing, or saving the index
+        try {
             withContext(Dispatchers.IO) {
                 dir.mkdirs()
-                input.use { src -> file.outputStream().use { src.copyTo(it) } }
+                input.use { src -> temp.outputStream().use { src.copyTo(it) } }
             }
-            readium.open(file)
+            // The content decides the format, which the file extension then records
+            val format = readium.sniff(temp) ?: throw IOException("不支持这种文件，只能导入 EPUB、PDF、CBZ")
+            file = File(dir, "$id.${format.extension}")
+            if (!temp.renameTo(file)) throw IOException("保存文件失败")
+            val publication = readium.open(file)
+            val book = try {
+                saveCover(id, publication, format)
+                Book(
+                    id = id,
+                    title = publication.metadata.title?.takeIf { it.isNotBlank() } ?: fallbackTitle,
+                    author = publication.metadata.authors.joinToString { it.name },
+                    fileName = file.name,
+                    addedAt = System.currentTimeMillis(),
+                    source = source,
+                    coverVersion = COVER_VERSION,
+                    // Character counts (for reading speed) only make sense for text; 0 keeps PDF / CBZ from being counted again
+                    totalChars = if (format == BookFormat.EPUB) countChars(publication) else 0L,
+                )
+            } finally {
+                publication.close()
+            }
+            update { it + book }
+            return book
         } catch (e: Exception) {
+            temp.delete()
             file.delete()
+            File(coverDir, "$id.jpg").delete()
             throw e
         }
-        val book = try {
-            saveCover(id, publication)
-            Book(
-                id = id,
-                title = publication.metadata.title?.takeIf { it.isNotBlank() } ?: fallbackTitle,
-                author = publication.metadata.authors.joinToString { it.name },
-                fileName = file.name,
-                addedAt = System.currentTimeMillis(),
-                source = source,
-                coverVersion = COVER_VERSION,
-                totalChars = countChars(publication),
-            )
-        } finally {
-            publication.close()
-        }
-        update { it + book }
-        return book
     }
 
     /** Adds covers and character counts to books imported earlier */
@@ -131,8 +146,8 @@ class BookRepository(private val dir: File, private val readium: Readium) {
             val chars = runCatching {
                 val publication = readium.open(file(book))
                 try {
-                    if (cover(book) == null) saveCover(book.id, publication)
-                    book.totalChars ?: countChars(publication)
+                    if (cover(book) == null) saveCover(book.id, publication, book.format)
+                    book.totalChars ?: if (book.format == BookFormat.EPUB) countChars(publication) else 0L
                 } finally {
                     publication.close()
                 }
@@ -168,6 +183,11 @@ class BookRepository(private val dir: File, private val readium: Readium) {
                 }
             }
         }
+    }
+
+    /** Page turn direction of a PDF / CBZ */
+    suspend fun setRightToLeft(id: String, rightToLeft: Boolean) {
+        update { list -> list.map { if (it.id == id) it.copy(rightToLeft = rightToLeft) else it } }
     }
 
     /** Puts books into a group (groups with the same name merge); a null [group] removes them from their group */
@@ -270,8 +290,11 @@ class BookRepository(private val dir: File, private val readium: Readium) {
         }
     }
 
-    private suspend fun saveCover(id: String, publication: Publication) {
-        val bitmap = publication.coverFitting(Size(COVER_WIDTH, COVER_HEIGHT)) ?: fallbackCover(publication) ?: return
+    /** Readium finds EPUB covers in the metadata, renders a PDF's first page and takes a comic's first image */
+    private suspend fun saveCover(id: String, publication: Publication, format: BookFormat) {
+        val bitmap = publication.coverFitting(Size(COVER_WIDTH, COVER_HEIGHT))
+            ?: (if (format == BookFormat.EPUB) fallbackCover(publication) else null)
+            ?: return
         withContext(Dispatchers.IO) {
             coverDir.mkdirs()
             File(coverDir, "$id.jpg").outputStream().use { bitmap.compress(Bitmap.CompressFormat.JPEG, 85, it) }
