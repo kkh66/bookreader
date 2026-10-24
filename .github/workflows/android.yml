@@ -1,5 +1,5 @@
-# Unit tests + release APK on every push to main and every pull request;
-# pushing a tag like v0.3.9 also publishes the signed APK to GitHub Releases.
+# Builds only when a tag like v0.3.9 is pushed: unit tests, then the signed APK is published to GitHub Releases
+# and only the newest 3 releases are kept. It can also be run by hand from the Actions tab (that run publishes nothing).
 #
 # Signing uses these repository secrets (without them the APK is unsigned; tags refuse to release unsigned):
 #   RELEASE_KEYSTORE_BASE64  base64 of the .jks keystore
@@ -8,12 +8,10 @@ name: Android
 
 on:
   push:
-    branches: [main]
     tags: ["v*"]
-  pull_request:
   workflow_dispatch:
 
-# A newer push to the same branch cancels the build still running for the older one
+# Pushing the same tag again cancels the build still running for it
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
@@ -22,7 +20,7 @@ jobs:
   build:
     runs-on: ubuntu-latest
     permissions:
-      contents: write # creating the release on tags
+      contents: write # creating the release on tags and deleting old ones
     env:
       RELEASE_KEYSTORE_BASE64: ${{ secrets.RELEASE_KEYSTORE_BASE64 }}
       # Read by app/build.gradle.kts as Gradle properties; ignored unless a keystore is set up below
@@ -92,3 +90,16 @@ jobs:
         with:
           files: dist/*.apk
           generate_release_notes: true
+
+      # Older releases are deleted with their APKs; their git tags stay
+      - name: Keep only the newest 3 releases
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release list --repo "$GITHUB_REPOSITORY" --exclude-drafts --limit 100 --json tagName,publishedAt \
+            --jq 'sort_by(.publishedAt) | reverse | .[3:][] | .tagName' |
+            while read -r tag; do
+              echo "Deleting release $tag"
+              gh release delete "$tag" --repo "$GITHUB_REPOSITORY" --yes
+            done
