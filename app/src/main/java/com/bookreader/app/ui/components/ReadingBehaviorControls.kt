@@ -1,6 +1,9 @@
 package com.bookreader.app.ui.components
 
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -13,18 +16,28 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.sp
+import com.bookreader.app.data.PageAnimation
 
-/** Reading behavior switches, shared by the reader's settings panel and Me → 阅读样式 so both always list the same options */
+/** Reading behavior settings, shared by the reader's settings panel and Me → 阅读样式 so both always list the same options */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun ReadingBehaviorControls(
+    pageAnimation: PageAnimation,
     volumeKeyPaging: Boolean,
     hideStatusBar: Boolean,
     openLastOnLaunch: Boolean,
+    onPageAnimationChange: (PageAnimation) -> Unit,
     onVolumeKeyPagingChange: (Boolean) -> Unit,
     onHideStatusBarChange: (Boolean) -> Unit,
     onOpenLastOnLaunchChange: (Boolean) -> Unit,
 ) {
     Column {
+        Column(Modifier.padding(vertical = Space.S), verticalArrangement = Arrangement.spacedBy(Space.S)) {
+            Text("翻页动画", fontSize = 16.sp, color = MaterialTheme.colorScheme.onSurface)
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(Space.S), verticalArrangement = Arrangement.spacedBy(Space.S)) {
+                PageAnimation.entries.forEach { ChoiceChip(it.label, selected = it == pageAnimation) { onPageAnimationChange(it) } }
+            }
+        }
         ToggleRow(volumeKeyPaging, "音量键翻页", "音量下 = 下一页，音量上 = 上一页", onVolumeKeyPagingChange)
         ToggleRow(hideStatusBar, "阅读时隐藏状态栏", "点屏幕中间呼出菜单时再显示", onHideStatusBarChange)
         ToggleRow(openLastOnLaunch, "启动时打开上次阅读", "打开应用直接回到上次读的书", onOpenLastOnLaunchChange)

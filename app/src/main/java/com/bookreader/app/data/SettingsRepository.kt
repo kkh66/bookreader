@@ -12,6 +12,14 @@ enum class ThemeMode(val label: String) {
     Dark("深色"),
 }
 
+/** How a page turn looks; the reader falls back to [Slide] where an effect can't play (see PageTurnLayout) */
+enum class PageAnimation(val label: String) {
+    Curl("仿真"),
+    Cover("覆盖"),
+    Slide("平移"),
+    None("无"),
+}
+
 /**
  * App settings (appearance, library layout, reading style and toggles), stored in app-private SharedPreferences
  * The library list lives in [LibraryRepository]
@@ -74,6 +82,17 @@ class SettingsRepository(context: Context) {
         _lastHighlight.value = kind to color
     }
 
+    /** How pages turn while reading */
+    private val _pageAnimation = MutableStateFlow(
+        PageAnimation.entries.firstOrNull { it.name == prefs.getString(KEY_PAGE_ANIMATION, null) } ?: PageAnimation.Curl
+    )
+    val pageAnimation: StateFlow<PageAnimation> = _pageAnimation.asStateFlow()
+
+    fun setPageAnimation(animation: PageAnimation) {
+        prefs.edit().putString(KEY_PAGE_ANIMATION, animation.name).apply()
+        _pageAnimation.value = animation
+    }
+
     /** Toggle setting: stored in prefs and exposed as a StateFlow for the UI to observe */
     inner class Toggle(private val key: String, default: Boolean) {
         private val _state = MutableStateFlow(prefs.getBoolean(key, default))
@@ -115,5 +134,6 @@ class SettingsRepository(context: Context) {
         const val KEY_READING_STYLE = "reading_style"
         const val KEY_HIGHLIGHT_KIND = "highlight_kind"
         const val KEY_HIGHLIGHT_COLOR = "highlight_color"
+        const val KEY_PAGE_ANIMATION = "page_animation"
     }
 }

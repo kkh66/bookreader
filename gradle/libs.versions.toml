@@ -3,6 +3,8 @@
 agp = "9.3.1"
 kotlin = "2.4.20"
 readium = "3.4.0"
+# The PDF view Readium's PDFium adapter uses; the reader reads its zoom. Keep in step with Readium
+pdf-viewer = "3.2.8"
 activity = "1.13.0"
 appcompat = "1.8.0"
 compose = "1.12.0"
@@ -22,6 +24,7 @@ readium-shared = { module = "org.readium.kotlin-toolkit:readium-shared", version
 readium-streamer = { module = "org.readium.kotlin-toolkit:readium-streamer", version.ref = "readium" }
 readium-navigator = { module = "org.readium.kotlin-toolkit:readium-navigator", version.ref = "readium" }
 readium-adapter-pdfium = { module = "org.readium.kotlin-toolkit:readium-adapter-pdfium", version.ref = "readium" }
+pdf-viewer = { module = "com.github.marain87:AndroidPdfViewer", version.ref = "pdf-viewer" }
 androidx-activity-compose = { module = "androidx.activity:activity-compose", version.ref = "activity" }
 androidx-appcompat = { module = "androidx.appcompat:appcompat", version.ref = "appcompat" }
 androidx-fragment-ktx = { module = "androidx.fragment:fragment-ktx", version.ref = "fragment" }
