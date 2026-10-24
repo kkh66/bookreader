@@ -365,7 +365,7 @@ class ReaderActivity : AppCompatActivity(), EpubNavigatorFragment.Listener {
         controls.setContent {
             val topInset = with(LocalDensity.current) { headerInset.intValue.toDp() }
             ReaderTheme {
-                ReaderHeader(session.book.title, topInset, onBack = ::finish)
+                ReaderHeader(session.book.title, topInset, onBack = ::finish, onSearch = { showingSearch.value = true })
             }
         }
         bottomControls.setContent {
@@ -584,7 +584,7 @@ class ReaderActivity : AppCompatActivity(), EpubNavigatorFragment.Listener {
 }
 
 @Composable
-private fun ReaderHeader(title: String, topInset: Dp, onBack: () -> Unit) {
+private fun ReaderHeader(title: String, topInset: Dp, onBack: () -> Unit, onSearch: () -> Unit) {
     Surface(color = MaterialTheme.colorScheme.background) {
         // When the status bar overlays the top bar, the bar's background extends under it and the content moves down
         Column(Modifier.padding(top = topInset)) {
@@ -601,6 +601,7 @@ private fun ReaderHeader(title: String, topInset: Dp, onBack: () -> Unit) {
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.weight(1f).padding(horizontal = Space.S),
                 )
+                IconButton(onClick = onSearch) { Icon(AppIcons.Search, "搜索") }
             }
             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
         }
@@ -638,7 +639,10 @@ private fun readerPreferences(dark: Boolean, style: ReadingStyle) = EpubPreferen
     publisherStyles = !style.overridesPublisherStyles,
 )
 
-/** Bottom menu: previous chapter / whole-book progress slider / next chapter, with contents, bookmarks, search and reading settings below */
+/**
+ * Bottom menu: previous chapter / whole-book progress slider / next chapter, with contents, bookmarks and reading settings below;
+ * also hosts the search dialog, opened from the top bar or the selection menu
+ */
 @Composable
 private fun ReaderControls(
     book: Book,
@@ -729,7 +733,6 @@ private fun ReaderControls(
                         if (bookmarked) "移除当前书签" else "添加书签",
                     )
                 }
-                IconButton(onClick = { showingSearch.value = true }) { Icon(AppIcons.Search, "搜索") }
                 IconButton(onClick = { showingSettings = true }) { Icon(AppIcons.Settings, "阅读设置") }
             }
         }
