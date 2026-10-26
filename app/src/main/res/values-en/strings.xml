@@ -186,6 +186,8 @@
     <string name="port">Port</string>
     <string name="optional_path">Path (optional)</string>
     <string name="full_address">Full address: %1$s</string>
+    <string name="test_connection">Test connection</string>
+    <string name="connection_ok">Connected: %1$s</string>
     <string name="username">Username</string>
     <string name="password">Password</string>
     <string name="display_name">Display name (optional)</string>

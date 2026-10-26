@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -15,10 +16,12 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -46,6 +49,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.bookreader.app.R
 import com.bookreader.app.ui.components.Gap
 import com.bookreader.app.ui.components.Space
+import com.bookreader.app.ui.library.LibraryEditViewModel.TestResult
 import com.bookreader.app.ui.theme.AppIcons
 
 /**
@@ -61,6 +65,7 @@ fun LibraryEditScreen(
 ) {
     val context = LocalContext.current
     val error by viewModel.error.collectAsStateWithLifecycle()
+    val test by viewModel.test.collectAsStateWithLifecycle()
     LaunchedEffect(libraryId) { viewModel.clearError() }
     val saved = viewModel.load(libraryId)
     // An old address that can't be split goes into the address field as is, and the hint guides the fix
@@ -74,6 +79,8 @@ fun LibraryEditScreen(
     var password by rememberSaveable { mutableStateOf(saved?.password.orEmpty()) }
     var protocolMenu by remember { mutableStateOf(false) }
     val address = OpdsAddress(https, host, port, path)
+    // A test result belongs to the address and account it was run with
+    LaunchedEffect(address.toUrl(), username, password) { viewModel.clearTest() }
     val fieldShape = RoundedCornerShape(16.dp)
 
     /** Address field input: a pasted full URL (or several characters at once, like host:port) is split into the fields; normal typing only changes the address */
@@ -213,6 +220,21 @@ fun LibraryEditScreen(
                         shape = fieldShape,
                         modifier = Modifier.fillMaxWidth(),
                     )
+                    // Tries the address and account as typed, before saving
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Space.M)) {
+                        OutlinedButton(
+                            onClick = { viewModel.test(address.toUrl(), username, password) },
+                            enabled = address.valid && test != TestResult.Running,
+                            shape = CircleShape,
+                        ) { Text(context.getString(R.string.test_connection)) }
+                        if (test == TestResult.Running) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
+                    }
+                    when (val result = test) {
+                        is TestResult.Connected ->
+                            Text(context.getString(R.string.connection_ok, result.title), color = MaterialTheme.colorScheme.primary, fontSize = 13.sp)
+                        is TestResult.Failed -> Text(result.message, color = MaterialTheme.colorScheme.error, fontSize = 13.sp)
+                        else -> Unit
+                    }
                 }
                 error?.let { Text(it, color = MaterialTheme.colorScheme.error, fontSize = 13.sp) }
                 Gap(Space.XL)

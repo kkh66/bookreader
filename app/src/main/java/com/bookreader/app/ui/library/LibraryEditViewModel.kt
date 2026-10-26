@@ -11,7 +11,9 @@ import com.bookreader.app.R
 import com.bookreader.app.container
 import com.bookreader.app.data.LibraryRepository
 import com.bookreader.app.data.OpdsLibrary
+import com.bookreader.app.data.opds.OpdsRepository
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
@@ -19,7 +21,11 @@ import kotlinx.coroutines.launch
 /**
  * Add / edit a library
  */
-class LibraryEditViewModel(private val libraries: LibraryRepository, private val context: Context) : ViewModel() {
+class LibraryEditViewModel(
+    private val libraries: LibraryRepository,
+    private val opds: OpdsRepository,
+    private val context: Context,
+) : ViewModel() {
     private val strings get() = ContextCompat.getContextForLanguage(context).resources
 
 
@@ -28,6 +34,39 @@ class LibraryEditViewModel(private val libraries: LibraryRepository, private val
 
     fun clearError() {
         _error.value = null
+    }
+
+    /** Outcome of the connection test for the address and account as typed; null when untested since they last changed */
+    sealed interface TestResult {
+        data object Running : TestResult
+        data class Connected(val title: String) : TestResult
+        data class Failed(val message: String) : TestResult
+    }
+
+    private val _test = MutableStateFlow<TestResult?>(null)
+    val test = _test.asStateFlow()
+    private var testJob: Job? = null
+
+    /** Fetches the feed with these settings, without saving them: wrong address, account or a non-OPDS page each fail with their own message */
+    fun test(url: String, username: String, password: String) {
+        testJob?.cancel()
+        _test.value = TestResult.Running
+        testJob = viewModelScope.launch {
+            _test.value = try {
+                val page = opds.load(OpdsLibrary(name = "", url = url, username = username.trim(), password = password))
+                TestResult.Connected(page.title.ifBlank { url })
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                TestResult.Failed(e.message ?: e.toString())
+            }
+        }
+    }
+
+    /** The settings changed: an earlier result no longer applies, and a test still running is dropped */
+    fun clearTest() {
+        testJob?.cancel()
+        _test.value = null
     }
 
     /** The library being edited, or null when creating a new one */
@@ -52,7 +91,10 @@ class LibraryEditViewModel(private val libraries: LibraryRepository, private val
 
     companion object {
         val Factory = viewModelFactory {
-            initializer { LibraryEditViewModel(this[APPLICATION_KEY]!!.container.libraries, this[APPLICATION_KEY]!!) }
+            initializer {
+                val app = this[APPLICATION_KEY]!!
+                LibraryEditViewModel(app.container.libraries, app.container.opds, app)
+            }
         }
     }
 }

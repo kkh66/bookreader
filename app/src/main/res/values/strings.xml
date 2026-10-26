@@ -186,6 +186,8 @@
     <string name="port">端口</string>
     <string name="optional_path">路径（可选）</string>
     <string name="full_address">完整地址：%1$s</string>
+    <string name="test_connection">测试连接</string>
+    <string name="connection_ok">连接成功：%1$s</string>
     <string name="username">用户名</string>
     <string name="password">密码</string>
     <string name="display_name">显示名称（可留空）</string>
