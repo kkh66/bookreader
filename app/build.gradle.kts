@@ -81,6 +81,8 @@ dependencies {
     implementation(libs.readium.navigator)
     implementation(libs.readium.adapter.pdfium)
     implementation(libs.pdf.viewer)
+    implementation(libs.telephoto.zoomable)
+    implementation(libs.telephoto.sub.sampling.image)
 
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.appcompat)

@@ -98,7 +98,6 @@ import org.readium.r2.navigator.OverflowableNavigator
 import org.readium.r2.navigator.epub.EpubNavigatorFactory
 import org.readium.r2.navigator.epub.EpubNavigatorFragment
 import org.readium.r2.navigator.epub.EpubPreferences
-import org.readium.r2.navigator.image.ImageNavigatorFragment
 import org.readium.r2.navigator.input.InputListener
 import org.readium.r2.navigator.input.TapEvent
 import org.readium.r2.navigator.pdf.PdfNavigatorFactory
@@ -113,7 +112,7 @@ import org.readium.r2.shared.publication.Locator
 import org.readium.r2.shared.util.AbsoluteUrl
 
 /**
- * Reader screen: hosts Readium's navigator for the book's format (EPUB, PDF via PDFium, or the image navigator for CBZ);
+ * Reader screen: hosts Readium's navigator for the book's format (EPUB, PDF via PDFium, or [ComicNavigatorFragment] for CBZ);
  * it only displays the book and reports progress to the ViewModel
  * Text selection, highlights, search and text style exist only for EPUB; PDF and comics turn pages in a direction chosen per book
  * The Publication must be opened first with [ReaderRepository.open]
@@ -153,6 +152,9 @@ class ReaderActivity : AppCompatActivity(), EpubNavigatorFragment.Listener {
     /** The navigator when the book is a PDF, created with the PDFium engine */
     @Suppress("UNCHECKED_CAST")
     private val pdfNavigator get() = supportFragmentManager.findFragmentByTag(NAVIGATOR_TAG) as? PdfiumNavigatorFragment
+
+    /** The navigator when the book is a comic */
+    private val comicNavigator get() = supportFragmentManager.findFragmentByTag(NAVIGATOR_TAG) as? ComicNavigatorFragment
 
     /** Page turn direction picked for this PDF / comic */
     private val rightToLeft get() = viewModel.book.value?.rightToLeft ?: false
@@ -223,7 +225,7 @@ class ReaderActivity : AppCompatActivity(), EpubNavigatorFragment.Listener {
                 initialLocator = lastLocator,
                 initialPreferences = pdfPreferences(rightToLeft),
             )
-            BookFormat.CBZ -> ImageNavigatorFragment.createFactory(session.publication, lastLocator)
+            BookFormat.CBZ -> ComicNavigatorFragment.createFactory(session.publication, lastLocator, rightToLeft)
         }
         super.onCreate(savedInstanceState)
         title = session.book.title
@@ -242,11 +244,7 @@ class ReaderActivity : AppCompatActivity(), EpubNavigatorFragment.Listener {
             visibility = if (controlsVisible) View.VISIBLE else View.GONE
             setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed)
         }
-        val readerContainer = FragmentContainerView(this).apply {
-            id = R.id.reader_container
-            // Readium's image navigator lays its pages out in the view's direction: right to left reverses them, as in manga
-            if (session.format == BookFormat.CBZ) layoutDirection = pageDirection(rightToLeft)
-        }
+        val readerContainer = FragmentContainerView(this).apply { id = R.id.reader_container }
         val pageTurns = PageTurnLayout(this, window).apply {
             addView(readerContainer, FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT))
             animation = viewModel.pageAnimation.value
@@ -301,7 +299,7 @@ class ReaderActivity : AppCompatActivity(), EpubNavigatorFragment.Listener {
             val navigatorClass = when (session.format) {
                 BookFormat.EPUB -> EpubNavigatorFragment::class.java
                 BookFormat.PDF -> PdfNavigatorFragment::class.java
-                BookFormat.CBZ -> ImageNavigatorFragment::class.java
+                BookFormat.CBZ -> ComicNavigatorFragment::class.java
             }
             supportFragmentManager.commitNow {
                 add(R.id.reader_container, navigatorClass, Bundle(), NAVIGATOR_TAG)
@@ -309,13 +307,12 @@ class ReaderActivity : AppCompatActivity(), EpubNavigatorFragment.Listener {
         }
         val navigator = supportFragmentManager.findFragmentByTag(NAVIGATOR_TAG) as OverflowableNavigator
         val epub = navigator as? EpubNavigatorFragment
-        pageTurns.rightToLeft = {
-            // A comic turns the way picked for it; Readium's image navigator only knows the book's own direction
-            if (session.format == BookFormat.CBZ) rightToLeft else navigator.overflow.value.readingProgression == ReadingProgression.RTL
-        }
+        pageTurns.rightToLeft = { navigator.overflow.value.readingProgression == ReadingProgression.RTL }
         // A screenshot of the page would carry the menu along
         pageTurns.effectsEnabled = { !controlsVisible }
-        pageTurns.dragTurnsEnabled = { !selecting && viewModel.markMenu.value == null && pdfView()?.isZooming != true }
+        pageTurns.dragTurnsEnabled = {
+            !selecting && viewModel.markMenu.value == null && pdfView()?.isZooming != true && comicNavigator?.zoomed != true
+        }
         pageTurns.navigate = { forward, animated -> if (forward) navigator.goForward(animated) else navigator.goBackward(animated) }
         navigator.addInputListener(object : InputListener {
             override fun onTap(event: TapEvent): Boolean {
@@ -518,7 +515,7 @@ class ReaderActivity : AppCompatActivity(), EpubNavigatorFragment.Listener {
                 launch {
                     viewModel.book.map { it?.rightToLeft ?: false }.distinctUntilChanged().drop(1).collect { rtl ->
                         if (session.format == BookFormat.PDF) pdfNavigator?.submitPreferences(pdfPreferences(rtl))
-                        if (session.format == BookFormat.CBZ) readerContainer.layoutDirection = pageDirection(rtl)
+                        comicNavigator?.rightToLeft = rtl
                     }
                 }
                 // Toggling "hide status bar" in settings takes effect immediately
@@ -778,8 +775,6 @@ private fun pageBackground(dark: Boolean) = if (dark) DARK_PAGE else LIGHT_PAGE
 /** PDF pages turn sideways like a book's, right to left for manga */
 private fun pdfPreferences(rightToLeft: Boolean) =
     PdfiumPreferences(readingProgression = if (rightToLeft) ReadingProgression.RTL else ReadingProgression.LTR)
-
-private fun pageDirection(rightToLeft: Boolean) = if (rightToLeft) View.LAYOUT_DIRECTION_RTL else View.LAYOUT_DIRECTION_LTR
 
 /** EPUB page appearance: light / dark colors plus the user's text style */
 @OptIn(ExperimentalReadiumApi::class)
