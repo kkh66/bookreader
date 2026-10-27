@@ -23,16 +23,22 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.Tab
+import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -58,7 +64,6 @@ import com.bookreader.app.ui.components.Gap
 import com.bookreader.app.ui.components.PagePadding
 import com.bookreader.app.ui.components.ReadingBehaviorControls
 import com.bookreader.app.ui.components.ReadingStyleControls
-import com.bookreader.app.ui.components.SectionTitle
 import com.bookreader.app.ui.components.Space
 import com.bookreader.app.ui.components.SurfaceCard
 import java.io.IOException
@@ -68,7 +73,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
 /**
- * Me → 阅读样式: default text style for every book, plus importing and removing fonts
+ * Me → 阅读样式: default text style for every book, reading behavior, and importing and removing fonts, one tab each
  * The reader's settings panel edits the same style with the page visible
  */
 @Composable
@@ -101,76 +106,87 @@ fun ReadingStyleScreen(
         }
     }
 
+    var tab by rememberSaveable { mutableIntStateOf(0) }
     Box(Modifier.fillMaxSize()) {
-        Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
+        Column(Modifier.fillMaxSize()) {
             BackHeader(context.getString(R.string.reading_style), onBack = onExit)
-            Column(Modifier.padding(horizontal = PagePadding, vertical = Space.M)) {
-                SectionTitle(context.getString(R.string.typography), Modifier.padding(start = Space.XS, bottom = Space.M))
-                SurfaceCard {
-                    Column(Modifier.padding(Space.L)) {
-                        ReadingStyleControls(style, fonts, onChange = viewModel::setStyle)
-                    }
+            // Text, behavior and fonts each get a tab (as in the reader's settings panel), so each fits on the screen at once
+            TabRow(
+                selectedTabIndex = tab,
+                containerColor = Color.Transparent,
+                contentColor = MaterialTheme.colorScheme.primary,
+            ) {
+                listOf(R.string.text_settings, R.string.behavior, R.string.my_fonts).forEachIndexed { index, label ->
+                    Tab(selected = tab == index, onClick = { tab = index }, text = { Text(context.getString(label), fontSize = 15.sp) })
                 }
-                Text(
-                    context.getString(R.string.typography_hint),
-                    fontSize = 13.sp, color = secondary,
-                    modifier = Modifier.padding(start = Space.XS, top = Space.S),
-                )
-                Gap(Space.XL)
-                SectionTitle(context.getString(R.string.reading_behavior), Modifier.padding(start = Space.XS, bottom = Space.M))
-                SurfaceCard {
-                    Column(Modifier.padding(horizontal = Space.L, vertical = Space.XS)) {
-                        ReadingBehaviorControls(
-                            pageAnimation, volumeKeyPaging, hideStatusBar, openLastOnLaunch,
-                            viewModel::setPageAnimation, viewModel::setVolumeKeyPaging, viewModel::setHideStatusBar,
-                            viewModel::setOpenLastOnLaunch,
-                        )
-                    }
-                }
-                Gap(Space.XL)
-                SectionTitle(
-                    context.getString(R.string.my_fonts), Modifier.padding(start = Space.XS, bottom = Space.M),
-                    trailing = if (fonts.isEmpty()) null else context.getString(R.string.item_count, fonts.size),
-                )
-                SurfaceCard {
-                    if (fonts.isEmpty()) {
-                        Text(context.getString(R.string.no_fonts), fontSize = 15.sp, color = secondary, modifier = Modifier.padding(Space.L))
-                    }
-                    fonts.forEachIndexed { index, font ->
-                        Row(
-                            Modifier.fillMaxWidth().padding(start = Space.L, end = Space.XS),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
+            }
+            // Each tab starts at its top; a screen too short for one still scrolls
+            key(tab) {
+                Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = PagePadding, vertical = Space.M)) {
+                    when (tab) {
+                        0 -> {
+                            SurfaceCard {
+                                Column(Modifier.padding(Space.L)) {
+                                    ReadingStyleControls(style, fonts, onChange = viewModel::setStyle)
+                                }
+                            }
                             Text(
-                                font.name, fontSize = 16.sp, maxLines = 1, overflow = TextOverflow.Ellipsis,
-                                modifier = Modifier.weight(1f),
+                                context.getString(R.string.typography_hint),
+                                fontSize = 13.sp, color = secondary,
+                                modifier = Modifier.padding(start = Space.XS, top = Space.S),
                             )
-                            TextButton(onClick = { pendingDelete = font }) { Text(context.getString(R.string.delete)) }
                         }
-                        if (index != fonts.lastIndex) {
-                            HorizontalDivider(Modifier.padding(horizontal = Space.L), color = MaterialTheme.colorScheme.outlineVariant)
+                        1 -> SurfaceCard {
+                            Column(Modifier.padding(horizontal = Space.L, vertical = Space.XS)) {
+                                ReadingBehaviorControls(
+                                    pageAnimation, volumeKeyPaging, hideStatusBar, openLastOnLaunch,
+                                    viewModel::setPageAnimation, viewModel::setVolumeKeyPaging, viewModel::setHideStatusBar,
+                                    viewModel::setOpenLastOnLaunch,
+                                )
+                            }
+                        }
+                        else -> {
+                            SurfaceCard {
+                                if (fonts.isEmpty()) {
+                                    Text(context.getString(R.string.no_fonts), fontSize = 15.sp, color = secondary, modifier = Modifier.padding(Space.L))
+                                }
+                                fonts.forEachIndexed { index, font ->
+                                    Row(
+                                        Modifier.fillMaxWidth().padding(start = Space.L, end = Space.XS),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                    ) {
+                                        Text(
+                                            font.name, fontSize = 16.sp, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                                            modifier = Modifier.weight(1f),
+                                        )
+                                        TextButton(onClick = { pendingDelete = font }) { Text(context.getString(R.string.delete)) }
+                                    }
+                                    if (index != fonts.lastIndex) {
+                                        HorizontalDivider(Modifier.padding(horizontal = Space.L), color = MaterialTheme.colorScheme.outlineVariant)
+                                    }
+                                }
+                            }
+                            Gap(Space.M)
+                            OutlinedButton(
+                                onClick = { picker.launch(arrayOf("*/*")) },
+                                enabled = !importing,
+                                shape = CircleShape,
+                                modifier = Modifier.fillMaxWidth(),
+                            ) {
+                                if (importing) {
+                                    CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+                                } else {
+                                    Text(context.getString(R.string.import_font))
+                                }
+                            }
+                            Text(
+                                context.getString(R.string.font_import_hint),
+                                fontSize = 13.sp, color = secondary,
+                                modifier = Modifier.padding(start = Space.XS, top = Space.S),
+                            )
                         }
                     }
                 }
-                Gap(Space.M)
-                OutlinedButton(
-                    onClick = { picker.launch(arrayOf("*/*")) },
-                    enabled = !importing,
-                    shape = CircleShape,
-                    modifier = Modifier.fillMaxWidth(),
-                ) {
-                    if (importing) {
-                        CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
-                    } else {
-                        Text(context.getString(R.string.import_font))
-                    }
-                }
-                Text(
-                    context.getString(R.string.font_import_hint),
-                    fontSize = 13.sp, color = secondary,
-                    modifier = Modifier.padding(start = Space.XS, top = Space.S),
-                )
-                Gap(Space.XL)
             }
         }
         SnackbarHost(snackbar, Modifier.align(Alignment.BottomCenter))

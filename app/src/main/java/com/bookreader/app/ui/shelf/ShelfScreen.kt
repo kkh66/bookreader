@@ -72,7 +72,7 @@ import com.bookreader.app.ui.theme.AppIcons
 
 @Composable
 fun ShelfScreen(
-    onOpenDiscover: () -> Unit,
+    onAddLibrary: () -> Unit,
     onImportBook: () -> Unit,
     viewModel: ShelfViewModel = viewModel(factory = ShelfViewModel.Factory),
 ) {
@@ -149,7 +149,7 @@ fun ShelfScreen(
             }
 
             if (state.total == 0) {
-                fullLine { EmptyShelf(onOpenDiscover = onOpenDiscover, onImport = onImportBook) }
+                fullLine { EmptyShelf(onAddLibrary = onAddLibrary, onImport = onImportBook) }
             } else {
                 fullLine {
                     AllBooksHeader(state.count, grid, viewModel::setGrid)
@@ -397,7 +397,7 @@ internal fun readLabel(book: Book): String {
 }
 
 @Composable
-private fun EmptyShelf(onOpenDiscover: () -> Unit, onImport: () -> Unit) {
+private fun EmptyShelf(onAddLibrary: () -> Unit, onImport: () -> Unit) {
     val context = LocalContext.current
     SurfaceCard(Modifier.padding(top = Space.XL)) {
         Column(Modifier.padding(Space.XL)) {
@@ -406,7 +406,7 @@ private fun EmptyShelf(onOpenDiscover: () -> Unit, onImport: () -> Unit) {
             Text(context.getString(R.string.empty_shelf_hint), fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
             Gap(Space.L)
             Row(horizontalArrangement = Arrangement.spacedBy(Space.M)) {
-                Button(onClick = onOpenDiscover, shape = CircleShape) { Text(context.getString(R.string.go_to_library)) }
+                Button(onClick = onAddLibrary, shape = CircleShape) { Text(context.getString(R.string.add_library)) }
                 OutlinedButton(onClick = onImport, shape = CircleShape) { Text(context.getString(R.string.import_books)) }
             }
         }

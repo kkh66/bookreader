@@ -185,7 +185,7 @@ private fun AppRoot() {
                 Box(Modifier.padding(padding)) {
                     tabStates.SaveableStateProvider(tab.name) {
                     when (tab) {
-                        Tab.Shelf -> ShelfScreen(onOpenDiscover = { tab = Tab.Discover }, onImportBook = importBook)
+                        Tab.Shelf -> ShelfScreen(onAddLibrary = { editLibrary = "" }, onImportBook = importBook)
                         Tab.Discover -> DiscoverScreen(
                             onOpenLibrary = { libraryId = it },
                             onAddLibrary = { editLibrary = "" },
@@ -194,7 +194,8 @@ private fun AppRoot() {
                         )
                         Tab.Stats -> StatsScreen()
                         Tab.Me -> MeScreen(
-                            onOpenLibraries = { tab = Tab.Discover },
+                            onAddLibrary = { editLibrary = "" },
+                            onEditLibrary = { editLibrary = it },
                             onOpenStats = { tab = Tab.Stats },
                             onOpenReadingStyle = { readingStyle = true },
                         )

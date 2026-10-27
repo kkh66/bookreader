@@ -81,9 +81,7 @@
     <string name="no_bookmarks">No bookmarks yet. Tap the bookmark button below to add one</string>
     <string name="page_number">Page %1$s</string>
     <string name="reading_style">Reading style</string>
-    <string name="typography">Typography</string>
     <string name="typography_hint">Adjust these settings in the reader to preview changes as you read</string>
-    <string name="reading_behavior">Reading behavior</string>
     <string name="my_fonts">My fonts</string>
     <string name="item_count">%1$s</string>
     <string name="no_fonts">No fonts imported yet</string>
@@ -106,8 +104,6 @@
     <string name="appearance">Appearance</string>
     <string name="reading_history">Reading history</string>
     <string name="library">Library</string>
-    <string name="online_libraries">Online libraries</string>
-    <string name="about">About</string>
     <string name="version">Version</string>
     <string name="untitled">Untitled</string>
     <string name="book_imported">Imported “%1$s”</string>
@@ -151,7 +147,6 @@
     <string name="read_progress">Read %1$s</string>
     <string name="empty_shelf">Your shelf is empty</string>
     <string name="empty_shelf_hint">Download from a Calibre library or import EPUB, PDF and CBZ files</string>
-    <string name="go_to_library">Browse Calibre library</string>
     <string name="import_books">Import books</string>
     <string name="library_save_failed">Could not save library: %1$s</string>
     <string name="library_delete_failed">Could not delete library: %1$s</string>
@@ -186,8 +181,10 @@
     <string name="port">Port</string>
     <string name="optional_path">Path (optional)</string>
     <string name="full_address">Full address: %1$s</string>
-    <string name="test_connection">Test connection</string>
+    <string name="test_connection">Test</string>
     <string name="connection_ok">Connected: %1$s</string>
+    <string name="show_password">Show password</string>
+    <string name="hide_password">Hide password</string>
     <string name="username">Username</string>
     <string name="password">Password</string>
     <string name="display_name">Display name (optional)</string>

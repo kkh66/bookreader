@@ -164,23 +164,31 @@ fun ProgressLine(progress: Float, modifier: Modifier = Modifier) {
 fun SettingRow(
     icon: ImageVector,
     title: String,
-    onClick: () -> Unit,
+    /** Null for a row that only shows a value (no chevron, not tappable) */
+    onClick: (() -> Unit)?,
     value: String? = null,
     showDivider: Boolean = true,
+    /** Second line under the title, in the secondary text color */
+    subtitle: String? = null,
 ) {
     Column {
         Row(
-            Modifier.fillMaxWidth().clickable(onClick = onClick).padding(Space.L),
+            Modifier.fillMaxWidth().then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier).padding(Space.L),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Icon(icon, null, Modifier.size(24.dp), tint = MaterialTheme.colorScheme.onSurface)
-            Text(title, fontSize = 17.sp, modifier = Modifier.weight(1f).padding(start = Space.L))
+            Column(Modifier.weight(1f).padding(start = Space.L)) {
+                Text(title, fontSize = 17.sp)
+                subtitle?.let { Text(it, fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+            }
             value?.let { ValueChip(it) }
-            Icon(
-                AppIcons.ChevronRight, null,
-                Modifier.padding(start = Space.S).size(22.dp),
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+            if (onClick != null) {
+                Icon(
+                    AppIcons.ChevronRight, null,
+                    Modifier.padding(start = Space.S).size(22.dp),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
         }
         // The divider starts at the text: start padding + 24dp icon + icon-to-text gap
         if (showDivider) {

@@ -81,9 +81,7 @@
     <string name="no_bookmarks">还没有书签，点击底部的书签按钮添加</string>
     <string name="page_number">第 %1$s 页</string>
     <string name="reading_style">阅读样式</string>
-    <string name="typography">排版</string>
     <string name="typography_hint">在阅读页底部的设置里调整，可以边看正文边改</string>
-    <string name="reading_behavior">阅读行为</string>
     <string name="my_fonts">我的字体</string>
     <string name="item_count">%1$s 个</string>
     <string name="no_fonts">还没有导入字体</string>
@@ -106,8 +104,6 @@
     <string name="appearance">外观</string>
     <string name="reading_history">阅读记录</string>
     <string name="library">书库</string>
-    <string name="online_libraries">网上书库</string>
-    <string name="about">关于</string>
     <string name="version">版本</string>
     <string name="untitled">未命名</string>
     <string name="book_imported">已导入《%1$s》</string>
@@ -151,7 +147,6 @@
     <string name="read_progress">已读 %1$s</string>
     <string name="empty_shelf">书架还是空的</string>
     <string name="empty_shelf_hint">从 Calibre 书库下载，或导入本地 EPUB、PDF、CBZ</string>
-    <string name="go_to_library">去 Calibre 书库</string>
     <string name="import_books">导入书籍</string>
     <string name="library_save_failed">保存书库失败：%1$s</string>
     <string name="library_delete_failed">删除书库失败：%1$s</string>
@@ -188,6 +183,8 @@
     <string name="full_address">完整地址：%1$s</string>
     <string name="test_connection">测试连接</string>
     <string name="connection_ok">连接成功：%1$s</string>
+    <string name="show_password">显示密码</string>
+    <string name="hide_password">隐藏密码</string>
     <string name="username">用户名</string>
     <string name="password">密码</string>
     <string name="display_name">显示名称（可留空）</string>

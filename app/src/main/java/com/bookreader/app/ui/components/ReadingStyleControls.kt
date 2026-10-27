@@ -43,7 +43,11 @@ import kotlin.math.roundToInt
 fun ReadingStyleControls(style: ReadingStyle, fonts: List<UserFont>, onChange: (ReadingStyle) -> Unit) {
     val context = LocalContext.current
     Column(verticalArrangement = Arrangement.spacedBy(Space.S)) {
-        Text(context.getString(R.string.font), fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        // Reset sits beside the first label rather than in a row of its own below the sliders, keeping the controls short
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(context.getString(R.string.font), fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
+            TextButton(onClick = { onChange(ReadingStyle()) }) { Text(context.getString(R.string.reset_book_defaults)) }
+        }
         FlowRow(horizontalArrangement = Arrangement.spacedBy(Space.S), verticalArrangement = Arrangement.spacedBy(Space.S)) {
             val choices = listOf(null to context.getString(R.string.book_default), ReadingStyle.SERIF to context.getString(R.string.serif), ReadingStyle.SANS_SERIF to context.getString(R.string.sans_serif)) +
                 fonts.map { it.family to it.name }
@@ -72,9 +76,6 @@ fun ReadingStyleControls(style: ReadingStyle, fonts: List<UserFont>, onChange: (
             context.getString(R.string.page_margins), style.pageMargins, 0.0..3.0, 0.25,
             label = { decimal(it) },
         ) { onChange(style.copy(pageMargins = it)) }
-        TextButton(onClick = { onChange(ReadingStyle()) }, modifier = Modifier.align(Alignment.End)) {
-            Text(context.getString(R.string.reset_book_defaults))
-        }
     }
 }
 
