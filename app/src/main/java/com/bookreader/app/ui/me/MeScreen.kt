@@ -79,6 +79,7 @@ fun MeScreen(
                                 value = context.getString(R.string.item_count, libraries.size),
                                 onClick = { page = MePage.Libraries },
                             )
+                            SettingRow(AppIcons.Backup, stringResource(R.string.backup_restore), onClick = { page = MePage.Backup })
                             SettingRow(AppIcons.Settings, stringResource(R.string.application), onClick = { page = MePage.App }, showDivider = false)
                         }
                         Gap(Space.XL)
@@ -102,6 +103,9 @@ fun MeScreen(
                         }
                         SettingRow(AppIcons.Add, context.getString(R.string.add_library), onClick = onAddLibrary, showDivider = false)
                     }
+                }
+                MePage.Backup -> SubPage(stringResource(R.string.backup_restore), onBack = { page = MePage.Home }) {
+                    BackupPage()
                 }
                 MePage.App -> SubPage(stringResource(R.string.application), onBack = { page = MePage.Home }) {
                     SurfaceCard {
@@ -177,7 +181,7 @@ private fun ThemeDialog(current: ThemeMode, onDismiss: () -> Unit, onSelect: (Th
     )
 }
 
-private enum class MePage { Home, Reading, Libraries, App }
+private enum class MePage { Home, Reading, Libraries, Backup, App }
 
 /** One of the Me tab's pages of options, under a header whose back arrow returns to the list */
 @Composable

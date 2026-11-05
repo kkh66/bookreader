@@ -20,6 +20,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -28,12 +29,14 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -47,6 +50,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -106,8 +110,18 @@ fun OpdsScreen(
     }
     BackHandler(onBack = if (searching) closeSearch else goBack)
 
+    // A new page (another folder, going back, paging) starts at the top; recreating the screen keeps the scroll
+    val listState = rememberLazyListState()
+    var shownUrl by rememberSaveable { mutableStateOf(state.url) }
+    LaunchedEffect(state.url) {
+        if (state.url != shownUrl) {
+            listState.scrollToItem(0)
+            shownUrl = state.url
+        }
+    }
+
     Box(Modifier.fillMaxSize()) {
-        Column {
+        Column(Modifier.fillMaxSize()) {
             if (searching) {
                 SearchHeader(
                     query = query,
@@ -133,9 +147,9 @@ fun OpdsScreen(
             state.error?.let {
                 Text(it, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(PagePadding))
             }
-            LazyColumn {
+            LazyColumn(Modifier.weight(1f), state = listState) {
                 itemsIndexed(state.entries) { index, entry ->
-                    val last = index == state.entries.lastIndex && state.nextUrl == null
+                    val last = index == state.entries.lastIndex
                     when (entry) {
                         is OpdsEntry.Folder -> IconTileRow(
                             icon = AppIcons.Folder,
@@ -158,17 +172,8 @@ fun OpdsScreen(
                         }
                     }
                 }
-                state.nextUrl?.let { next ->
-                    item {
-                        IconTileRow(
-                            icon = AppIcons.ArrowForward,
-                            title = context.getString(R.string.next_page),
-                            showDivider = false,
-                            onClick = { viewModel.openNext(next) },
-                        )
-                    }
-                }
             }
+            if (state.previousUrl != null || state.nextUrl != null) PagerBar(state, viewModel::turnPage)
         }
         SnackbarHost(snackbar, Modifier.align(Alignment.BottomCenter))
     }
@@ -344,4 +349,38 @@ private fun Chip(text: String) {
         modifier = Modifier.clip(CircleShape).background(MaterialTheme.colorScheme.surfaceVariant)
             .padding(horizontal = Space.M, vertical = Space.XS),
     )
+}
+
+/** Bottom pager for a list served in pages: first / previous / page number / next / last; a button with nowhere to go greys out */
+@Composable
+private fun PagerBar(state: OpdsUiState, onPage: (String) -> Unit) {
+    val context = LocalContext.current
+    // First and previous lead somewhere only off the first page, next and last only off the last one
+    val first = state.firstUrl.takeIf { state.previousUrl != null }
+    val last = state.lastUrl.takeIf { state.nextUrl != null }
+    Column {
+        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+        Row(Modifier.fillMaxWidth().padding(horizontal = Space.S, vertical = Space.XS), verticalAlignment = Alignment.CenterVertically) {
+            IconButton(onClick = { first?.let(onPage) }, enabled = first != null) {
+                Icon(AppIcons.FirstPage, context.getString(R.string.first_page))
+            }
+            TextButton(onClick = { state.previousUrl?.let(onPage) }, enabled = state.previousUrl != null) {
+                Text(context.getString(R.string.previous_page))
+            }
+            Text(
+                state.page?.let { context.getString(R.string.page_number, it.toString()) }.orEmpty(),
+                fontSize = 13.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = TextAlign.Center,
+                maxLines = 1,
+                modifier = Modifier.weight(1f),
+            )
+            TextButton(onClick = { state.nextUrl?.let(onPage) }, enabled = state.nextUrl != null) {
+                Text(context.getString(R.string.next_page))
+            }
+            IconButton(onClick = { last?.let(onPage) }, enabled = last != null) {
+                Icon(AppIcons.LastPage, context.getString(R.string.last_page))
+            }
+        }
+    }
 }

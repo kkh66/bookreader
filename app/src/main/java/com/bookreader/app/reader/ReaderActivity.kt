@@ -3,8 +3,10 @@ package com.bookreader.app.reader
 import android.content.Context
 import android.content.Intent
 import android.content.res.Configuration
+import android.graphics.Color.BLACK
 import android.graphics.Color.TRANSPARENT
 import android.graphics.RectF
+import android.graphics.drawable.ColorDrawable
 import android.net.Uri
 import android.os.Bundle
 import android.os.SystemClock
@@ -18,6 +20,7 @@ import android.view.View
 import android.view.ViewGroup
 import android.view.ViewGroup.LayoutParams.MATCH_PARENT
 import android.view.ViewGroup.LayoutParams.WRAP_CONTENT
+import android.view.WindowManager
 import android.widget.FrameLayout
 import android.widget.Toast
 import androidx.activity.SystemBarStyle
@@ -293,7 +296,14 @@ class ReaderActivity : AppCompatActivity(), EpubNavigatorFragment.Listener {
             headerInset.intValue = statusTop
             WindowInsetsCompat.CONSUMED
         }
-        setContentView(content)
+        // Black veil for brightness below the lowest backlight; on the outer layout so it also covers the strips under the system bars
+        val veil = ColorDrawable(BLACK).apply { alpha = 0 }
+        setContentView(
+            FrameLayout(this).apply {
+                addView(content, FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT))
+                foreground = veil
+            },
+        )
 
         if (savedInstanceState == null) {
             val navigatorClass = when (session.format) {
@@ -414,6 +424,17 @@ class ReaderActivity : AppCompatActivity(), EpubNavigatorFragment.Listener {
                             onDismiss = viewModel::closePanel,
                         )
                     }
+                    ReaderPanel.Brightness -> {
+                        val brightness by viewModel.brightness.collectAsStateWithLifecycle()
+                        val brightnessSystem by viewModel.brightnessSystem.collectAsStateWithLifecycle()
+                        ReaderBrightnessDialog(
+                            level = brightness,
+                            system = brightnessSystem,
+                            onLevel = viewModel::setBrightness,
+                            onSystem = viewModel::setBrightnessSystem,
+                            onDismiss = viewModel::closePanel,
+                        )
+                    }
                     ReaderPanel.Search -> {
                         val search by viewModel.searchState.collectAsStateWithLifecycle()
                         ReaderSearchDialog(
@@ -466,6 +487,7 @@ class ReaderActivity : AppCompatActivity(), EpubNavigatorFragment.Listener {
                     onSeek = ::seekTo,
                     onOpenContents = ::openContents,
                     onToggleBookmark = viewModel::toggleBookmark,
+                    onOpenBrightness = { viewModel.showPanel(ReaderPanel.Brightness) },
                     onOpenSettings = { viewModel.showPanel(ReaderPanel.Settings) },
                 )
             }
@@ -481,6 +503,16 @@ class ReaderActivity : AppCompatActivity(), EpubNavigatorFragment.Listener {
                     }
                 }
                 launch { viewModel.pageAnimation.collect { pageTurns.animation = it } }
+                // Brightness from the menu's slider, or the system's; only this window, so leaving the reader restores the system's
+                launch {
+                    combine(viewModel.brightness, viewModel.brightnessSystem, ::Pair).collect { (level, system) ->
+                        window.attributes = window.attributes.apply {
+                            screenBrightness = if (system) WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE else backlightFor(level)
+                        }
+                        veil.alpha = if (system) 0 else (dimFor(level) * 255).roundToInt()
+                        pageTurns.dim = veil.alpha / 255f
+                    }
+                }
                 if (epub != null) {
                     // The page's text selection lives only as long as its menu: closing the menu,
                     // or turning the selection into a highlight, clears it
@@ -792,7 +824,7 @@ private fun readerPreferences(dark: Boolean, style: ReadingStyle) = EpubPreferen
 )
 
 /**
- * Bottom menu: previous chapter / whole-book progress slider / next chapter, with contents, bookmark and reading settings below
+ * Bottom menu: previous chapter / whole-book progress slider / next chapter, with contents, bookmark, brightness and reading settings below
  * A book without contents (a comic) has no chapter buttons. [onSeek] jumps to a progression and returns whether it worked
  */
 @Composable
@@ -805,6 +837,7 @@ private fun ReaderControls(
     onSeek: suspend (Float) -> Boolean,
     onOpenContents: () -> Unit,
     onToggleBookmark: () -> Unit,
+    onOpenBrightness: () -> Unit,
     onOpenSettings: () -> Unit,
 ) {
     val context = LocalContext.current
@@ -860,6 +893,7 @@ private fun ReaderControls(
                         if (bookmarked) context.getString(R.string.remove_bookmark) else context.getString(R.string.add_bookmark),
                     )
                 }
+                IconButton(onClick = onOpenBrightness) { Icon(AppIcons.Brightness, context.getString(R.string.brightness)) }
                 IconButton(onClick = onOpenSettings) { Icon(AppIcons.Settings, context.getString(R.string.reader_settings)) }
             }
         }

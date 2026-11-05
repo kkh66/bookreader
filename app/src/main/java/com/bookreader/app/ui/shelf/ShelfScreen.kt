@@ -1,6 +1,8 @@
 package com.bookreader.app.ui.shelf
 
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -24,6 +26,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -43,6 +46,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInRoot
@@ -57,6 +61,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.bookreader.app.R
 import com.bookreader.app.data.Book
 import com.bookreader.app.data.BookFormat
+import com.bookreader.app.data.opds.OpdsParser
 import com.bookreader.app.reader.ReaderActivity
 import com.bookreader.app.ui.components.BookCover
 import com.bookreader.app.ui.components.COVER_RATIO
@@ -89,6 +94,15 @@ fun ShelfScreen(
     var pendingGroup by remember { mutableStateOf<List<String>?>(null) }
     var openGroup by rememberSaveable { mutableStateOf<String?>(null) }
     val listCoverWidth = with(LocalDensity.current) { 64.dp.toPx() }
+    val passwordNotice by viewModel.passwordNotice.collectAsStateWithLifecycle()
+    /** A local import restored without its file was opened: explain, then pick the file */
+    var pendingFile by remember { mutableStateOf<Book?>(null) }
+    var restoringId by rememberSaveable { mutableStateOf<String?>(null) }
+    val filePicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        val id = restoringId
+        restoringId = null
+        if (uri != null && id != null) viewModel.restoreLocal(id, uri)
+    }
     val closeSearch = {
         searching = false
         viewModel.setQuery("")
@@ -106,6 +120,9 @@ fun ShelfScreen(
 
     LaunchedEffect(Unit) {
         viewModel.openReader.collect { context.startActivity(ReaderActivity.intent(context, it)) }
+    }
+    LaunchedEffect(Unit) {
+        viewModel.pickFile.collect { pendingFile = it }
     }
     LaunchedEffect(state.message) {
         state.message?.let {
@@ -136,13 +153,14 @@ fun ShelfScreen(
                 }
             }
             if (state.busy) fullLine { LinearProgressIndicator(Modifier.fillMaxWidth().padding(top = Space.S)) }
+            if (passwordNotice && !searching) fullLine { PasswordNotice(viewModel::dismissPasswordNotice) }
 
             val current = state.current
             if (current != null && !searching) {
                 fullLine {
-                    Column(Modifier.padding(top = Space.XL)) {
-                        Text(context.getString(R.string.continue_reading), fontSize = 24.sp, fontWeight = FontWeight.Bold)
-                        Gap(Space.M)
+                    Column(Modifier.padding(top = Space.L)) {
+                        Text(context.getString(R.string.continue_reading), fontSize = 20.sp, fontWeight = FontWeight.Bold)
+                        Gap(Space.S)
                         ContinueCard(current, loading = openingId == current.book.id) { viewModel.open(current.book) }
                     }
                 }
@@ -224,6 +242,22 @@ fun ShelfScreen(
         )
     }
 
+    pendingFile?.let { book ->
+        AlertDialog(
+            onDismissRequest = { pendingFile = null },
+            title = { Text(context.getString(R.string.choose_original_file)) },
+            text = { Text(context.getString(R.string.choose_original_file_hint, book.title)) },
+            confirmButton = {
+                TextButton(onClick = {
+                    pendingFile = null
+                    restoringId = book.id
+                    filePicker.launch(OpdsParser.IMPORT_TYPES)
+                }) { Text(context.getString(R.string.choose_file)) }
+            },
+            dismissButton = { TextButton(onClick = { pendingFile = null }) { Text(context.getString(R.string.cancel)) } },
+        )
+    }
+
     pendingGroup?.let { ids ->
         GroupNameDialog(
             title = context.getString(R.string.new_group),
@@ -261,6 +295,24 @@ private fun androidx.compose.foundation.lazy.grid.LazyGridScope.fullLine(content
 
 private fun percent(progress: Double) = ShelfFormat.percent(progress)
 
+/** Marks a book whose file isn't on this device: opening it downloads it again (OPDS) or asks for the file (local import) */
+internal val ShelfItem.badge: ImageVector?
+    get() = if (!missing) null else if (book.source != null) AppIcons.Download else AppIcons.Import
+
+/** After restoring a backup: library passwords weren't in it */
+@Composable
+private fun PasswordNotice(onDismiss: () -> Unit) {
+    val context = LocalContext.current
+    val secondary = MaterialTheme.colorScheme.onSurfaceVariant
+    SurfaceCard(Modifier.padding(top = Space.L)) {
+        Row(Modifier.padding(start = Space.L, end = Space.XS, top = Space.XS, bottom = Space.XS), verticalAlignment = Alignment.CenterVertically) {
+            Icon(AppIcons.Server, null, Modifier.size(20.dp), tint = secondary)
+            Text(context.getString(R.string.password_notice), fontSize = 14.sp, modifier = Modifier.weight(1f).padding(horizontal = Space.M))
+            IconButton(onClick = onDismiss) { Icon(AppIcons.Close, context.getString(R.string.close), tint = secondary) }
+        }
+    }
+}
+
 /** Continue reading: a compact one-row card, clickable as a whole */
 @Composable
 private fun ContinueCard(item: ShelfItem, loading: Boolean, onContinue: () -> Unit) {
@@ -268,8 +320,8 @@ private fun ContinueCard(item: ShelfItem, loading: Boolean, onContinue: () -> Un
     val book = item.book
     val secondary = MaterialTheme.colorScheme.onSurfaceVariant
     SurfaceCard(onClick = onContinue) {
-        Row(Modifier.padding(Space.L), verticalAlignment = Alignment.CenterVertically) {
-            BookCover(book.title, book.author, item.coverPath, Modifier.width(52.dp).aspectRatio(COVER_RATIO), loading)
+        Row(Modifier.padding(Space.M), verticalAlignment = Alignment.CenterVertically) {
+            BookCover(book.title, book.author, item.coverPath, Modifier.width(44.dp).aspectRatio(COVER_RATIO), loading, item.badge)
             Column(Modifier.weight(1f).padding(horizontal = Space.M)) {
                 Text(book.title, fontSize = 16.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 Gap(Space.XS)
@@ -277,14 +329,14 @@ private fun ContinueCard(item: ShelfItem, loading: Boolean, onContinue: () -> Un
                     listOfNotNull(book.author.ifBlank { null }, book.chapter).joinToString(" · "),
                     fontSize = 13.sp, color = secondary, maxLines = 1, overflow = TextOverflow.Ellipsis,
                 )
-                Gap(Space.M)
+                Gap(Space.S)
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     ProgressLine(book.progress.toFloat(), Modifier.weight(1f))
                     Text(percent(book.progress), fontSize = 12.sp, color = secondary, modifier = Modifier.padding(start = Space.S))
                 }
             }
             Box(
-                Modifier.size(44.dp).clip(CircleShape).background(MaterialTheme.colorScheme.primary),
+                Modifier.size(40.dp).clip(CircleShape).background(MaterialTheme.colorScheme.primary),
                 contentAlignment = Alignment.Center,
             ) {
                 Icon(AppIcons.ArrowForward, context.getString(R.string.continue_reading), Modifier.size(20.dp), tint = MaterialTheme.colorScheme.onPrimary)
@@ -298,7 +350,7 @@ private fun AllBooksHeader(count: Int, grid: Boolean, onGridChange: (Boolean) ->
     val context = LocalContext.current
     Row(Modifier.padding(top = Space.XL, bottom = Space.M), verticalAlignment = Alignment.CenterVertically) {
         Column(Modifier.weight(1f)) {
-            Text(context.getString(R.string.all_books), fontSize = 24.sp, fontWeight = FontWeight.Bold)
+            Text(context.getString(R.string.all_books), fontSize = 20.sp, fontWeight = FontWeight.Bold)
             Text(context.getString(R.string.book_count, count), fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         ModeIcon(AppIcons.Grid, context.getString(R.string.grid), selected = grid) { onGridChange(true) }
@@ -323,6 +375,7 @@ private fun GridBook(item: ShelfItem, highlighted: Boolean, loading: Boolean, mo
             book.title, book.author, item.coverPath,
             Modifier.dropHighlight(highlighted).fillMaxWidth().aspectRatio(COVER_RATIO),
             loading,
+            item.badge,
         )
         Gap(Space.M)
         Text(book.title, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -349,6 +402,7 @@ private fun ListBook(item: ShelfItem, highlighted: Boolean, loading: Boolean, mo
             book.title, book.author, item.coverPath,
             Modifier.dropHighlight(highlighted).width(64.dp).aspectRatio(COVER_RATIO),
             loading,
+            item.badge,
         )
         Column(Modifier.weight(1f).padding(start = Space.L)) {
             Row {

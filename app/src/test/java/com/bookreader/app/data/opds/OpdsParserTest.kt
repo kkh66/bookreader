@@ -173,6 +173,37 @@ class OpdsParserTest {
         )
     }
 
+    @Test
+    fun pagingLinksAndPageNumberOfAMiddlePage() {
+        val feed = """
+            <feed xmlns="http://www.w3.org/2005/Atom">
+              <link rel="first" href="/opds/new" type="application/atom+xml;profile=opds-catalog"/>
+              <link rel="previous" href="/opds/new?offset=30" type="application/atom+xml;profile=opds-catalog"/>
+              <link rel="next" href="/opds/new?offset=90" type="application/atom+xml;profile=opds-catalog"/>
+              <link rel="last" href="/opds/new?offset=9990" type="application/atom+xml;profile=opds-catalog"/>
+              <title>Recently added Books</title>
+            </feed>
+        """.trimIndent()
+        val page = OpdsParser.parse(feed, "$base/new?offset=60")
+        assertEquals("$base/new", page.firstUrl)
+        assertEquals("$base/new?offset=30", page.previousUrl)
+        assertEquals("$base/new?offset=90", page.nextUrl)
+        assertEquals("$base/new?offset=9990", page.lastUrl)
+        assertEquals(3, page.page)
+    }
+
+    @Test
+    fun pageNumberFromOffsets() {
+        // First page: no offset in its own URL
+        assertEquals(1, OpdsParser.pageNumber("$base/new", "$base/new?offset=30", null))
+        // Last page: only a previous page to measure against
+        assertEquals(334, OpdsParser.pageNumber("$base/new?offset=9990", null, "$base/new?offset=9960"))
+        // Paged some other way: no number
+        assertNull(OpdsParser.pageNumber("$base/new?page=2", "$base/new?page=3", "$base/new?page=1"))
+        // A single page
+        assertNull(OpdsParser.pageNumber("$base/new", null, null))
+    }
+
     @Test(expected = IllegalArgumentException::class)
     fun nonFeedThrows() {
         OpdsParser.parse("<html><body>Unauthorized</body></html>", base)

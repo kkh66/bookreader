@@ -230,7 +230,8 @@ private fun BottomBar(selected: Tab, onSelect: (Tab) -> Unit) {
                 val color = if (active) MaterialTheme.colorScheme.onBackground
                 else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
                 Column(
-                    Modifier.weight(1f).fillMaxHeight().clickable { onSelect(tab) },
+                    // No press ripple: tapping only changes the selected tab's color and weight
+                    Modifier.weight(1f).fillMaxHeight().clickable(interactionSource = null, indication = null) { onSelect(tab) },
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.Center,
                 ) {

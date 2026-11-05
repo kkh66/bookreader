@@ -4,6 +4,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
@@ -58,7 +59,7 @@ internal data class ReaderSettingsState(
 )
 
 /**
- * Reading settings as a bottom panel over the page, without dimming, so text style changes can be seen as they apply
+ * Reading settings as a bottom panel over the page ([ReaderSheet]), so text style changes can be seen as they apply
  * [fonts] are the imported fonts registered when the book opened; a PDF or comic has no text style, only its page turn direction
  */
 @Composable
@@ -76,6 +77,41 @@ internal fun ReaderSettingsDialog(
 ) {
     val context = LocalContext.current
     var tab by rememberSaveable { mutableIntStateOf(0) }
+    ReaderSheet(context.getString(R.string.reader_settings), onDismiss, Modifier.fillMaxHeight(0.6f)) {
+        // Two tabs: text style (adjusted with the page visible) or page turn direction, and reading behavior switches
+        TabRow(
+            selectedTabIndex = tab,
+            containerColor = Color.Transparent,
+            contentColor = MaterialTheme.colorScheme.primary,
+        ) {
+            listOf(if (format == BookFormat.EPUB) context.getString(R.string.text_settings) else context.getString(R.string.page_turn), context.getString(R.string.behavior)).forEachIndexed { index, label ->
+                Tab(selected = tab == index, onClick = { tab = index }, text = { Text(label, fontSize = 15.sp) })
+            }
+        }
+        Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = Space.XL)) {
+            Gap(Space.S)
+            if (tab == 0 && format == BookFormat.EPUB) {
+                ReadingStyleControls(settings.style, fonts, onChange = onStyleChange)
+            } else if (tab == 0) {
+                ReadingDirectionControls(settings.rightToLeft, onChange = onRightToLeftChange)
+            } else {
+                ReadingBehaviorControls(
+                    settings.pageAnimation, settings.volumeKeyPaging, settings.hideStatusBar, settings.openLastOnLaunch,
+                    onPageAnimationChange, onVolumeKeyPagingChange, onHideStatusBarChange, onOpenLastOnLaunchChange,
+                )
+            }
+            Gap(Space.L)
+        }
+    }
+}
+
+/**
+ * Bottom panel over the page, without dimming, so changes can be seen on the page as they apply:
+ * a title with 完成 above [content]; a tap outside the panel closes it. [modifier] sizes the panel
+ */
+@Composable
+internal fun ReaderSheet(title: String, onDismiss: () -> Unit, modifier: Modifier = Modifier, content: @Composable ColumnScope.() -> Unit) {
+    val context = LocalContext.current
     Dialog(
         onDismissRequest = onDismiss,
         properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false),
@@ -87,7 +123,7 @@ internal fun ReaderSettingsDialog(
             contentAlignment = Alignment.BottomCenter,
         ) {
             Column(
-                Modifier.widthIn(max = 560.dp).fillMaxWidth().fillMaxHeight(0.6f)
+                Modifier.widthIn(max = 560.dp).fillMaxWidth().then(modifier)
                     // A shade off the page color so the panel's edge shows against the text
                     .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp))
                     // The panel takes its own taps so they don't close it
@@ -98,33 +134,10 @@ internal fun ReaderSettingsDialog(
                     Modifier.fillMaxWidth().padding(start = Space.XL, end = Space.S, top = Space.S),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Text(context.getString(R.string.reader_settings), fontSize = 18.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                    Text(title, fontSize = 18.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
                     TextButton(onClick = onDismiss) { Text(context.getString(R.string.done)) }
                 }
-                // Two tabs: text style (adjusted with the page visible) or page turn direction, and reading behavior switches
-                TabRow(
-                    selectedTabIndex = tab,
-                    containerColor = Color.Transparent,
-                    contentColor = MaterialTheme.colorScheme.primary,
-                ) {
-                    listOf(if (format == BookFormat.EPUB) context.getString(R.string.text_settings) else context.getString(R.string.page_turn), context.getString(R.string.behavior)).forEachIndexed { index, label ->
-                        Tab(selected = tab == index, onClick = { tab = index }, text = { Text(label, fontSize = 15.sp) })
-                    }
-                }
-                Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = Space.XL)) {
-                    Gap(Space.S)
-                    if (tab == 0 && format == BookFormat.EPUB) {
-                        ReadingStyleControls(settings.style, fonts, onChange = onStyleChange)
-                    } else if (tab == 0) {
-                        ReadingDirectionControls(settings.rightToLeft, onChange = onRightToLeftChange)
-                    } else {
-                        ReadingBehaviorControls(
-                            settings.pageAnimation, settings.volumeKeyPaging, settings.hideStatusBar, settings.openLastOnLaunch,
-                            onPageAnimationChange, onVolumeKeyPagingChange, onHideStatusBarChange, onOpenLastOnLaunchChange,
-                        )
-                    }
-                    Gap(Space.L)
-                }
+                content()
             }
         }
     }

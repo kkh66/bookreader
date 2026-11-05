@@ -9,6 +9,7 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Icon
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -37,6 +38,7 @@ import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -50,9 +52,19 @@ const val COVER_RATIO = 0.7f
 
 private val coverCache = LruCache<String, ImageBitmap>(48)
 
-/** Book cover: shows the extracted cover image if there is one, otherwise a cover generated from the title; [loading] dims it with a spinner */
+/**
+ * Book cover: shows the extracted cover image if there is one, otherwise a cover generated from the title; [loading] dims it with a spinner,
+ * [badge] marks a book that isn't on this device yet (how opening it gets the file)
+ */
 @Composable
-fun BookCover(title: String, author: String, coverPath: String?, modifier: Modifier = Modifier, loading: Boolean = false) {
+fun BookCover(
+    title: String,
+    author: String,
+    coverPath: String?,
+    modifier: Modifier = Modifier,
+    loading: Boolean = false,
+    badge: ImageVector? = null,
+) {
     // State is keyed on the path, so recycled list items don't keep the previous book's cover
     val bitmap = remember(coverPath) { mutableStateOf(coverPath?.let { coverCache.get(it) }) }
     LaunchedEffect(coverPath) {
@@ -62,7 +74,7 @@ fun BookCover(title: String, author: String, coverPath: String?, modifier: Modif
             }
         }
     }
-    CoverFrame(title, author, bitmap.value, modifier, loading)
+    CoverFrame(title, author, bitmap.value, modifier, loading, badge)
 }
 
 /**
@@ -85,7 +97,14 @@ fun RemoteCover(
 
 /** Cover frame: rounded corners + spine shadow on the left; uses the generated cover when there is no image */
 @Composable
-fun CoverFrame(title: String, author: String, image: ImageBitmap?, modifier: Modifier = Modifier, loading: Boolean = false) {
+fun CoverFrame(
+    title: String,
+    author: String,
+    image: ImageBitmap?,
+    modifier: Modifier = Modifier,
+    loading: Boolean = false,
+    badge: ImageVector? = null,
+) {
     Box(modifier.clip(RoundedCornerShape(6.dp))) {
         if (image != null) {
             Image(image, title, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
@@ -97,6 +116,19 @@ fun CoverFrame(title: String, author: String, image: ImageBitmap?, modifier: Mod
             Modifier.fillMaxHeight().width(6.dp)
                 .background(Brush.horizontalGradient(listOf(Color.Black.copy(alpha = 0.28f), Color.Transparent))),
         )
+        if (badge != null) {
+            BoxWithConstraints(Modifier.matchParentSize()) {
+                // Scaled to the cover, so list and grid covers both carry it
+                val size = (maxWidth * 0.26f).coerceIn(16.dp, 28.dp)
+                Box(
+                    Modifier.align(Alignment.BottomEnd).padding(size / 5).size(size).clip(CircleShape)
+                        .background(Color.Black.copy(alpha = 0.55f)),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(badge, null, Modifier.size(size * 0.62f), tint = Color.White)
+                }
+            }
+        }
         // Opening the book: dim the cover with a spinner sized to the cover, so small list covers fit it too
         AnimatedVisibility(loading, Modifier.matchParentSize(), enter = fadeIn(), exit = fadeOut()) {
             Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.45f)), contentAlignment = Alignment.Center) {

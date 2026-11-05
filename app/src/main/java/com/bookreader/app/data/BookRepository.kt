@@ -15,6 +15,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
@@ -68,6 +69,8 @@ data class Book(
     val group: String? = null,
     /** Page turns of a PDF / CBZ go right to left, as in Japanese manga */
     val rightToLeft: Boolean = false,
+    /** SHA-1 of a local import's file, kept by a backup without book files so the file picked to restore it can be checked */
+    val sha1: String? = null,
 ) {
     val format: BookFormat get() = BookFormat.of(fileName)
 }
@@ -86,6 +89,10 @@ class BookRepository(private val dir: File, private val readium: Readium, privat
 
     private val _books = MutableStateFlow(load())
     val books: StateFlow<List<Book>> = _books.asStateFlow()
+
+    /** Books whose file isn't on this device: restored from a backup without book files, opening them fetches the file again */
+    private val _missing = MutableStateFlow<Set<String>>(_books.value.filterNot { file(it).isFile }.mapTo(HashSet()) { it.id })
+    val missing: StateFlow<Set<String>> = _missing.asStateFlow()
 
     fun file(book: Book) = File(dir, book.fileName)
 
@@ -145,7 +152,7 @@ class BookRepository(private val dir: File, private val readium: Readium, privat
     /** Adds covers and character counts to books imported earlier */
     suspend fun ensureMetadata() {
         val pending = _books.value.filter { book ->
-            book.totalChars == null || (book.coverVersion < COVER_VERSION && cover(book) == null)
+            book.id !in _missing.value && (book.totalChars == null || (book.coverVersion < COVER_VERSION && cover(book) == null))
         }
         for (book in pending) {
             val chars = runCatching {
@@ -169,6 +176,38 @@ class BookRepository(private val dir: File, private val readium: Readium, privat
             file(book).delete()
             File(coverDir, "${book.id}.jpg").delete()
         }
+        _missing.update { it - book.id }
+    }
+
+    /**
+     * Puts back the file of a book restored without it (downloaded again, or picked by the user), keeping the book's id so its
+     * progress, bookmarks and stats carry on; a local import must be the very file that was backed up
+     */
+    suspend fun restoreFile(book: Book, input: InputStream) {
+        val temp = File(dir, "${book.id}.tmp")
+        try {
+            val sha1 = withContext(Dispatchers.IO) {
+                dir.mkdirs()
+                sha1Of(input) { src -> temp.outputStream().use { src.copyTo(it) } }
+            }
+            if (book.sha1 != null && sha1 != book.sha1) throw IOException(strings.getString(R.string.not_the_same_book))
+            if (readium.sniff(temp) != book.format) throw IOException(strings.getString(R.string.unsupported_book))
+            if (!temp.renameTo(file(book))) throw IOException(strings.getString(R.string.file_save_failed))
+        } finally {
+            temp.delete()
+        }
+        // The backup has the cover; only a missing one is extracted again
+        if (cover(book) == null) {
+            runCatching {
+                val publication = readium.open(file(book))
+                try {
+                    saveCover(book.id, publication, book.format)
+                } finally {
+                    publication.close()
+                }
+            }
+        }
+        _missing.update { it - book.id }
     }
 
     suspend fun updateProgress(id: String, locator: String, progress: Double, chapter: String?) {

@@ -470,7 +470,7 @@ private fun GroupBook(
     val book = item.book
     Column(Modifier.padding(bottom = Space.L).combinedClickable(onClick = onClick, onLongClick = onLongClick)) {
         Box {
-            BookCover(book.title, book.author, item.coverPath, Modifier.fillMaxWidth().aspectRatio(COVER_RATIO), loading)
+            BookCover(book.title, book.author, item.coverPath, Modifier.fillMaxWidth().aspectRatio(COVER_RATIO), loading, item.badge)
             if (selecting) SelectMark(selected, Modifier.align(Alignment.TopEnd).padding(Space.XS))
         }
         Gap(Space.S)

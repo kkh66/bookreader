@@ -116,6 +116,48 @@ class SettingsRepository(context: Context) {
     /** Hide the system status bar while reading, show it again with the menu */
     val readerHideStatusBar = Toggle("reader_hide_status_bar", default = true)
 
+    /** The reader follows the system brightness; off once the menu's brightness slider is dragged */
+    val readerBrightnessSystem = Toggle("reader_brightness_system", default = true)
+
+    /** Position of the reader menu's brightness slider, 0..1; see [com.bookreader.app.reader.backlightFor] */
+    private val _readerBrightness = MutableStateFlow(prefs.getFloat(KEY_READER_BRIGHTNESS, 0.6f))
+    val readerBrightness: StateFlow<Float> = _readerBrightness.asStateFlow()
+
+    fun setReaderBrightness(level: Float) {
+        prefs.edit().putFloat(KEY_READER_BRIGHTNESS, level).apply()
+        _readerBrightness.value = level
+    }
+
+    /** Shelf reminder after restoring a backup, which leaves library passwords out */
+    val passwordNotice = Toggle(KEY_PASSWORD_NOTICE, default = false)
+
+    /** Every setting for a backup, except the old server login: key → Boolean / Int / Long / Float / String */
+    fun snapshot(): Map<String, Any> =
+        prefs.all.filterKeys { it !in LEGACY_KEYS }.mapNotNull { (key, value) -> value?.let { key to it } }.toMap()
+
+    /**
+     * Replaces every setting with a backup's [values]. A user font that isn't in [userFonts] falls back to the book's own fonts.
+     * Written synchronously and not reflected in the flows above: the app restarts right after a restore
+     */
+    fun replaceAll(values: Map<String, Any>, userFonts: Set<String>, passwordNotice: Boolean) {
+        val edit = prefs.edit().clear()
+        values.forEach { (key, value) ->
+            when (value) {
+                is Boolean -> edit.putBoolean(key, value)
+                is Int -> edit.putInt(key, value)
+                is Long -> edit.putLong(key, value)
+                is Float -> edit.putFloat(key, value)
+                is String -> edit.putString(key, value)
+            }
+        }
+        (values[KEY_READING_STYLE] as? String)
+            ?.let { runCatching { json.decodeFromString<ReadingStyle>(it) }.getOrNull() }
+            ?.takeIf { style -> style.fontFamily.let { it != null && it.startsWith(UserFont.FAMILY_PREFIX) && it !in userFonts } }
+            ?.let { edit.putString(KEY_READING_STYLE, json.encodeToString(it.copy(fontFamily = null))) }
+        edit.putBoolean(KEY_PASSWORD_NOTICE, passwordNotice)
+        edit.commit()
+    }
+
     /** 0.2.x had a single server stored here; unused after migrating to the library list */
     fun legacyServer(): OpdsLibrary? {
         val url = prefs.getString(KEY_URL, null)?.takeIf { it.isNotBlank() } ?: return null
@@ -138,5 +180,8 @@ class SettingsRepository(context: Context) {
         const val KEY_HIGHLIGHT_KIND = "highlight_kind"
         const val KEY_HIGHLIGHT_COLOR = "highlight_color"
         const val KEY_PAGE_ANIMATION = "page_animation"
+        const val KEY_READER_BRIGHTNESS = "reader_brightness"
+        const val KEY_PASSWORD_NOTICE = "restore_password_notice"
+        val LEGACY_KEYS = setOf(KEY_URL, KEY_USERNAME, KEY_PASSWORD)
     }
 }

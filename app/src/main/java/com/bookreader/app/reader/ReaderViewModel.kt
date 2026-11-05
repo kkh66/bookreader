@@ -53,7 +53,7 @@ import org.readium.r2.shared.util.AbsoluteUrl
 import org.readium.r2.shared.util.getOrElse
 
 /** A panel opened over the page */
-internal enum class ReaderPanel { Contents, Settings, Search }
+internal enum class ReaderPanel { Contents, Settings, Search, Brightness }
 
 /** The menu over the page: what it acts on, the latest copy of a tapped highlight (null for a fresh selection) and the marked text */
 internal data class MarkMenuState(val target: MarkTarget, val current: Highlight?, val text: String)
@@ -83,6 +83,8 @@ class ReaderViewModel(
     val volumeKeyPaging = settings.volumeKeyPaging.state
     val hideStatusBar = settings.readerHideStatusBar.state
     val pageAnimation = settings.pageAnimation
+    val brightness = settings.readerBrightness
+    val brightnessSystem = settings.readerBrightnessSystem.state
 
     /** Imported fonts registered when the book opened */
     val fonts: List<UserFont> = session?.fonts?.map { it.font }.orEmpty()
@@ -169,6 +171,14 @@ class ReaderViewModel(
     fun setHideStatusBar(on: Boolean) = settings.readerHideStatusBar.set(on)
 
     fun setOpenLastOnLaunch(on: Boolean) = settings.openLastOnLaunch.set(on)
+
+    /** Dragging the brightness slider takes over from the system brightness */
+    fun setBrightness(level: Float) {
+        settings.setReaderBrightness(level)
+        if (brightnessSystem.value) settings.readerBrightnessSystem.set(false)
+    }
+
+    fun setBrightnessSystem(on: Boolean) = settings.readerBrightnessSystem.set(on)
 
     /** Page turn direction of this PDF / comic: right to left for Japanese manga */
     fun setRightToLeft(on: Boolean) {

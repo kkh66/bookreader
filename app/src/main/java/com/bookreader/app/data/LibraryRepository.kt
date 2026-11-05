@@ -26,6 +26,11 @@ data class OpdsLibrary(
     val host: String get() = runCatching { URI(url).host }.getOrNull() ?: url
 }
 
+internal fun libraryFor(libraries: List<OpdsLibrary>, url: String): OpdsLibrary? {
+    val host = runCatching { URI(url).host }.getOrNull() ?: return null
+    return libraries.filter { it.host == host }.maxByOrNull { it.url.commonPrefixWith(url).length }
+}
+
 /**
  * Library list, stored in libraries.json in the app-private directory (includes credentials, never leaves the app)
  * On first launch, migrates the old single-server setting into the first library
@@ -39,6 +44,9 @@ class LibraryRepository(private val file: File, settings: SettingsRepository) {
     val libraries: StateFlow<List<OpdsLibrary>> = _libraries.asStateFlow()
 
     fun find(id: String) = _libraries.value.firstOrNull { it.id == id }
+
+    /** The library a download URL came from: same host, the closest address winning when several share it */
+    fun forUrl(url: String): OpdsLibrary? = libraryFor(_libraries.value, url)
 
     /** Create or update */
     suspend fun save(library: OpdsLibrary) = update { list ->

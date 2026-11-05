@@ -36,6 +36,11 @@ data class OpdsPage(
     val title: String,
     val entries: List<OpdsEntry>,
     val nextUrl: String?,
+    val previousUrl: String? = null,
+    val firstUrl: String? = null,
+    val lastUrl: String? = null,
+    /** 1-based page number, when the server pages by offset (see [OpdsParser.pageNumber]) */
+    val page: Int? = null,
     /** Atom search template with a {searchTerms} placeholder; null when the server doesn't support search */
     val searchTemplate: String? = null,
 )
@@ -78,11 +83,18 @@ object OpdsParser {
     fun parse(xml: String, feedUrl: String, invalidFeedMessage: String = "不是 OPDS feed"): OpdsPage {
         val feed = Jsoup.parse(xml, feedUrl, Parser.xmlParser()).selectFirst("feed")
             ?: throw IllegalArgumentException(invalidFeedMessage)
-        val next = feed.childrenNamed("link").firstOrNull { it.attr("rel") == "next" }
+        fun link(vararg rels: String) =
+            feed.childrenNamed("link").firstOrNull { it.attr("rel") in rels }?.let { resolve(feedUrl, it.attr("href")) }
+        val next = link("next")
+        val previous = link("previous", "prev")
         return OpdsPage(
             title = feed.childText("title"),
             entries = feed.childrenNamed("entry").mapNotNull { parseEntry(it, feedUrl) },
-            nextUrl = next?.let { resolve(feedUrl, it.attr("href")) },
+            nextUrl = next,
+            previousUrl = previous,
+            firstUrl = link("first"),
+            lastUrl = link("last"),
+            page = pageNumber(feedUrl, next, previous),
             searchTemplate = feed.childrenNamed("link")
                 .firstOrNull {
                     it.attr("rel") == "search" && it.mimeType() == ATOM_TYPE && "{searchTerms}" in it.attr("href")
@@ -90,6 +102,20 @@ object OpdsParser {
                 ?.let { resolve(feedUrl, it.attr("href")) },
         )
     }
+
+    /**
+     * Page number for servers paging by offset (Calibre, Calibre-Web: ?offset=30): this page's offset over the step to
+     * the next or previous page; a URL without offset is offset 0. Null when the server pages some other way
+     */
+    fun pageNumber(url: String, next: String?, previous: String?): Int? {
+        val self = offset(url)
+        val step = next?.let { offset(it) - self } ?: previous?.let { self - offset(it) } ?: return null
+        return if (step > 0 && self % step == 0) self / step + 1 else null
+    }
+
+    private val OFFSET = Regex("""[?&]offset=(\d+)""")
+
+    private fun offset(url: String) = OFFSET.find(url)?.groupValues?.get(1)?.toIntOrNull() ?: 0
 
     private fun parseEntry(entry: Element, feedUrl: String): OpdsEntry? {
         val title = entry.childText("title").ifBlank { return null }

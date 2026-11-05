@@ -14,9 +14,11 @@ import com.bookreader.app.R
 import com.bookreader.app.container
 import com.bookreader.app.data.Book
 import com.bookreader.app.data.BookRepository
+import com.bookreader.app.data.LibraryRepository
 import com.bookreader.app.data.SettingsRepository
 import com.bookreader.app.data.StatsRepository
 import com.bookreader.app.data.displayName
+import com.bookreader.app.data.opds.OpdsRepository
 import com.bookreader.app.reader.ReaderRepository
 import java.io.IOException
 import kotlinx.coroutines.CancellationException
@@ -33,8 +35,8 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-/** Shelf item: book + cover path + total seconds spent reading it */
-data class ShelfItem(val book: Book, val coverPath: String?, val readSeconds: Long = 0)
+/** Shelf item: book + cover path + total seconds spent reading it; [missing] = its file isn't on this device (restored from a backup) */
+data class ShelfItem(val book: Book, val coverPath: String?, val readSeconds: Long = 0, val missing: Boolean = false)
 
 /** One shelf cell: a single book, or a group the user created by dragging */
 sealed interface ShelfEntry {
@@ -78,6 +80,8 @@ class ShelfViewModel(
     stats: StatsRepository,
     private val reader: ReaderRepository,
     private val settings: SettingsRepository,
+    private val libraries: LibraryRepository,
+    private val opds: OpdsRepository,
     private val resolver: ContentResolver,
     private val context: Context,
 ) : ViewModel() {
@@ -88,8 +92,8 @@ class ShelfViewModel(
     private val busy = MutableStateFlow(false)
     private val message = MutableStateFlow<String?>(null)
 
-    private val items = combine(books.books, stats.stats) { list, stats ->
-        list.map { ShelfItem(it, books.cover(it)?.path, stats.books[it.id] ?: 0L) }
+    private val items = combine(books.books, stats.stats, books.missing) { list, stats, missing ->
+        list.map { ShelfItem(it, books.cover(it)?.path, stats.books[it.id] ?: 0L, it.id in missing) }
     }
         .flowOn(Dispatchers.IO)
 
@@ -108,6 +112,17 @@ class ShelfViewModel(
             message = message,
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), ShelfUiState())
+
+    /** After restoring a backup: library passwords weren't in it, and a library that needs one has none yet */
+    val passwordNotice = combine(settings.passwordNotice.state, libraries.libraries) { on, list ->
+        on && list.any { it.username.isNotBlank() && it.password.isBlank() }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
+
+    fun dismissPasswordNotice() = settings.passwordNotice.set(false)
+
+    /** A local import restored without its file was opened: the screen asks for the file, then calls [restoreLocal] */
+    private val _pickFile = Channel<Book>(Channel.BUFFERED)
+    val pickFile = _pickFile.receiveAsFlow()
 
     /** One-shot event to open the reader, emitted only after the Publication opened successfully */
     private val _openReader = Channel<String>(Channel.BUFFERED)
@@ -138,6 +153,8 @@ class ShelfViewModel(
     fun openLastOnLaunch() {
         if (!settings.openLastOnLaunch.state.value) return
         val book = books.books.value.filter { it.lastReadAt > 0 }.maxByOrNull { it.lastReadAt } ?: return
+        // Not on this device yet: no download or file picker behind the splash screen
+        if (book.id in books.missing.value) return
         _launching.value = true
         open(book)
     }
@@ -157,6 +174,16 @@ class ShelfViewModel(
         _openingId.value = book.id
         launchCatching {
             try {
+                if (book.id in books.missing.value) {
+                    val source = book.source
+                    if (source == null) {
+                        _pickFile.send(book)
+                        return@launchCatching
+                    }
+                    // From an OPDS library: download it again into the same book
+                    val library = libraries.forUrl(source) ?: throw IOException(strings.getString(R.string.book_library_missing))
+                    opds.download(library, source) { books.restoreFile(book, it) }
+                }
                 reader.open(book)
                 _openReader.send(book.id)
             } finally {
@@ -176,6 +203,21 @@ class ShelfViewModel(
         // Comics have no title of their own, so the file name stands in
         val book = books.import(input, fallbackTitle = name?.substringBeforeLast('.')?.ifBlank { null } ?: strings.getString(R.string.untitled))
         message.value = strings.getString(R.string.book_imported, book.title)
+    }
+
+    /** The file picked for a local import restored without it; opens the book once it's back */
+    fun restoreLocal(bookId: String, uri: Uri) = launchCatching {
+        val book = books.find(bookId) ?: return@launchCatching
+        _openingId.value = book.id
+        try {
+            val input = withContext(Dispatchers.IO) {
+                resolver.openInputStream(uri) ?: throw IOException(strings.getString(R.string.file_read_failed))
+            }
+            books.restoreFile(book, input)
+        } finally {
+            _openingId.value = null
+        }
+        open(book)
     }
 
     fun delete(list: List<Book>) = launchBusy { list.forEach { books.remove(it) } }
@@ -227,8 +269,8 @@ class ShelfViewModel(
             initializer {
                 val app = this[APPLICATION_KEY]!!
                 ShelfViewModel(
-                    app.container.books, app.container.stats, app.container.reader,
-                    app.container.settings, app.contentResolver, app,
+                    app.container.books, app.container.stats, app.container.reader, app.container.settings,
+                    app.container.libraries, app.container.opds, app.contentResolver, app,
                 )
             }
         }

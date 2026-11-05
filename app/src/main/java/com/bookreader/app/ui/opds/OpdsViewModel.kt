@@ -32,7 +32,14 @@ import kotlinx.coroutines.launch
 data class OpdsUiState(
     val title: String = "",
     val entries: List<OpdsEntry> = emptyList(),
+    /** Page shown, set once it has loaded */
+    val url: String? = null,
     val nextUrl: String? = null,
+    val previousUrl: String? = null,
+    /** The server's first page link, or else the URL the list was opened with */
+    val firstUrl: String? = null,
+    val lastUrl: String? = null,
+    val page: Int? = null,
     val loading: Boolean = false,
     val error: String? = null,
     /** Download URLs already on the shelf */
@@ -56,25 +63,31 @@ class OpdsViewModel(
     private val strings get() = ContextCompat.getContextForLanguage(context).resources
 
 
-    private data class Level(val url: String, val title: String)
+    /** A visited list: the page shown ([url]) and the one it was opened at ([firstUrl]) */
+    private data class Level(val url: String, val title: String, val firstUrl: String = url)
 
     /** Folders visited so far, the last one is the current page; going back pops it */
     private val stack = ArrayDeque<Level>()
     private var loadJob: Job? = null
 
     private val _state = MutableStateFlow(OpdsUiState())
-    val state = combine(_state, books.books) { state, list ->
-        state.copy(downloaded = list.mapNotNullTo(HashSet()) { it.source })
+    // A book restored from a backup without its file counts as not downloaded
+    val state = combine(_state, books.books, books.missing) { state, list, missing ->
+        state.copy(downloaded = list.filter { it.id !in missing }.mapNotNullTo(HashSet()) { it.source })
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), OpdsUiState())
 
     /** Library being browsed; its credentials are used for requests */
     private var library: OpdsLibrary? = null
 
+    /** URL the screen was started with; the first level's page changes as it's paged through */
+    private var entryUrl: String? = null
+
     /** Called when the screen opens: restart from the entry URL when the library (including its URL/credentials) or the entry URL changed */
     fun start(libraryId: String, url: String, title: String) {
         val current = libraries.find(libraryId)
-        if (current == library && stack.firstOrNull()?.url == url) return
+        if (current == library && entryUrl == url) return
         library = current
+        entryUrl = url
         stack.clear()
         _state.update { OpdsUiState() }
         open(url, title)
@@ -85,8 +98,12 @@ class OpdsViewModel(
         load()
     }
 
-    /** The next page keeps the current title */
-    fun openNext(url: String) = open(url, stack.lastOrNull()?.title.orEmpty())
+    /** Another page of the same list replaces the current one, so going back leaves the list in one step */
+    fun turnPage(url: String) {
+        val level = stack.removeLastOrNull() ?: return
+        stack.addLast(level.copy(url = url))
+        load()
+    }
 
     fun refresh() = load()
 
@@ -101,11 +118,15 @@ class OpdsViewModel(
     fun download(entry: OpdsEntry.Book) {
         val url = entry.downloadUrl
         val library = library ?: return
-        if (books.hasSource(url) || url in _state.value.downloading) return
+        // Restored from a backup without its file: download it into that book, keeping its progress
+        val restored = books.books.value.firstOrNull { it.source == url && it.id in books.missing.value }
+        if ((books.hasSource(url) && restored == null) || url in _state.value.downloading) return
         _state.update { it.copy(downloading = it.downloading + url) }
         viewModelScope.launch {
             try {
-                val book = opds.download(library, url) { books.import(it, entry.title, source = url) }
+                val book = opds.download(library, url) { input ->
+                    restored?.also { books.restoreFile(it, input) } ?: books.import(input, entry.title, source = url)
+                }
                 _state.update { it.copy(message = strings.getString(R.string.book_downloaded, book.title)) }
             } catch (e: CancellationException) {
                 throw e
@@ -180,7 +201,12 @@ class OpdsViewModel(
                     it.copy(
                         title = level.title.ifBlank { page.title },
                         entries = page.entries,
+                        url = level.url,
                         nextUrl = page.nextUrl,
+                        previousUrl = page.previousUrl,
+                        firstUrl = page.firstUrl ?: level.firstUrl,
+                        lastUrl = page.lastUrl,
+                        page = page.page,
                         loading = false,
                     )
                 }
@@ -188,7 +214,10 @@ class OpdsViewModel(
                 throw e
             } catch (e: Exception) {
                 _state.update {
-                    it.copy(loading = false, error = e.message ?: e.toString(), entries = emptyList(), nextUrl = null)
+                    it.copy(
+                        loading = false, error = e.message ?: e.toString(), entries = emptyList(),
+                        nextUrl = null, previousUrl = null, firstUrl = null, lastUrl = null, page = null,
+                    )
                 }
             }
         }

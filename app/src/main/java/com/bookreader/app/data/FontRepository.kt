@@ -20,7 +20,11 @@ import kotlinx.serialization.json.Json
 /** A font the user imported; [family] is the CSS font-family name it's registered under in the reader */
 @Serializable
 data class UserFont(val id: String, val name: String, val fileName: String) {
-    val family: String get() = "BookReader-$id"
+    val family: String get() = "$FAMILY_PREFIX$id"
+
+    companion object {
+        const val FAMILY_PREFIX = "BookReader-"
+    }
 }
 
 /**

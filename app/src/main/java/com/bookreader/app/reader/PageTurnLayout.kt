@@ -9,6 +9,8 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Color
+import android.graphics.ColorMatrix
+import android.graphics.ColorMatrixColorFilter
 import android.graphics.LinearGradient
 import android.graphics.Matrix
 import android.graphics.Paint
@@ -53,6 +55,12 @@ internal class PageTurnLayout(context: Context, private val window: Window) : Fr
 
     /** Whether the next page is to the left, as in manga and right-to-left books */
     var rightToLeft: () -> Boolean = { false }
+
+    /**
+     * Opacity of the black veil the activity lays over the window (brightness below the lowest backlight).
+     * A screenshot already carries the veil, so it's drawn brightened back by as much, or the turning page would darken
+     */
+    var dim = 0f
 
     /** Off while the menu covers the page, which a screenshot would carry along; turns slide meanwhile */
     var effectsEnabled: () -> Boolean = { true }
@@ -222,7 +230,7 @@ internal class PageTurnLayout(context: Context, private val window: Window) : Fr
         if (turn.effect == PageAnimation.Cover && !turn.forward && child != null) {
             // Turning back with Cover, the page coming back slides in over the screenshot;
             // it's backed with the page color, since a comic or PDF page doesn't fill its view
-            canvas.drawBitmap(page, 0f, 0f, null)
+            canvas.drawBitmap(page, 0f, 0f, bitmapPaint)
             pagePaint.color = pageColor
             canvas.drawRect(child.left + child.translationX, child.top.toFloat(), child.right + child.translationX, child.bottom.toFloat(), pagePaint)
         }
@@ -426,6 +434,9 @@ internal class PageTurnLayout(context: Context, private val window: Window) : Fr
         val location = IntArray(2)
         getLocationInWindow(location)
         val area = Rect(location[0], location[1], location[0] + width, location[1] + height)
+        val undim = if (dim > 0f) ColorMatrixColorFilter(ColorMatrix().apply { (1f / (1f - dim)).let { setScale(it, it, it, 1f) } }) else null
+        bitmapPaint.colorFilter = undim
+        throughPaint.colorFilter = undim
         try {
             PixelCopy.request(window, area, bitmap, { result -> if (result == PixelCopy.SUCCESS) onCaptured() else onFailed() }, mainHandler)
         } catch (_: IllegalArgumentException) {
