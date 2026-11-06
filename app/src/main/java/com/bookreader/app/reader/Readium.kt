@@ -9,6 +9,7 @@ import java.io.IOException
 import org.readium.adapter.pdfium.document.PdfiumDocumentFactory
 import org.readium.r2.shared.publication.Link
 import org.readium.r2.shared.publication.Publication
+import org.readium.r2.shared.util.Try
 import org.readium.r2.shared.util.Url
 import org.readium.r2.shared.util.asset.AssetRetriever
 import org.readium.r2.shared.util.data.Container
@@ -18,6 +19,7 @@ import org.readium.r2.shared.util.getOrElse
 import org.readium.r2.shared.util.http.DefaultHttpClient
 import org.readium.r2.shared.util.mediatype.MediaType
 import org.readium.r2.shared.util.resource.Resource
+import org.readium.r2.shared.util.resource.map
 import org.readium.r2.streamer.PublicationOpener
 import org.readium.r2.streamer.parser.DefaultPublicationParser
 
@@ -56,7 +58,7 @@ class Readium(private val context: Context) {
     suspend fun open(file: File, fonts: List<FontFile> = emptyList()): Publication {
         val asset = assetRetriever.retrieve(file)
             .getOrElse { throw IOException(strings.getString(R.string.file_read_error, it.message)) }
-        return opener.open(asset, allowUserInteraction = false, onCreatePublication = { addFonts(fonts) })
+        return opener.open(asset, allowUserInteraction = false, onCreatePublication = { addFonts(fonts); popUpFootnotes() })
             .getOrElse {
                 asset.close()
                 throw IOException(strings.getString(R.string.file_parse_error, it.message))
@@ -82,6 +84,25 @@ private fun Publication.Builder.addFonts(fonts: List<FontFile>) {
     if (fonts.isEmpty()) return
     manifest = manifest.copy(resources = manifest.resources + fonts.map { Link(it.href, mediaType = it.mediaType) })
     container = FontContainer(container, fonts.associate { it.href to it.file })
+}
+
+/** Chapters are read through [markFootnotes], so footnotes marked only by a class pop up too */
+private fun Publication.Builder.popUpFootnotes() {
+    container = FootnoteContainer(container)
+}
+
+private class FootnoteContainer(private val base: Container<Resource>) : Container<Resource> by base {
+    override fun get(url: Url): Resource? = base[url]?.let { resource ->
+        if (url.path?.substringAfterLast('.')?.lowercase() in HTML_EXTENSIONS) {
+            resource.map { bytes -> Try.success(markFootnotes(bytes)) }
+        } else {
+            resource
+        }
+    }
+
+    private companion object {
+        val HTML_EXTENSIONS = setOf("xhtml", "html", "htm")
+    }
 }
 
 private class FontContainer(

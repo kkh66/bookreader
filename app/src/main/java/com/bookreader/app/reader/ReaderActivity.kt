@@ -16,6 +16,7 @@ import android.view.HapticFeedbackConstants
 import android.view.KeyEvent
 import android.view.Menu
 import android.view.MenuItem
+import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
 import android.view.ViewGroup.LayoutParams.MATCH_PARENT
@@ -52,6 +53,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.ComposeView
@@ -96,6 +98,7 @@ import org.readium.adapter.pdfium.navigator.PdfiumEngineProvider
 import org.readium.adapter.pdfium.navigator.PdfiumNavigatorFragment
 import org.readium.adapter.pdfium.navigator.PdfiumPreferences
 import org.readium.r2.navigator.DecorableNavigator
+import org.readium.r2.navigator.HyperlinkNavigator
 import org.readium.r2.navigator.Decoration
 import org.readium.r2.navigator.OverflowableNavigator
 import org.readium.r2.navigator.epub.EpubNavigatorFactory
@@ -111,6 +114,7 @@ import org.readium.r2.navigator.preferences.ReadingProgression
 import org.readium.r2.navigator.preferences.Theme
 import org.readium.r2.navigator.util.DirectionalNavigationAdapter
 import org.readium.r2.shared.ExperimentalReadiumApi
+import org.readium.r2.shared.publication.Link
 import org.readium.r2.shared.publication.Locator
 import org.readium.r2.shared.util.AbsoluteUrl
 
@@ -126,6 +130,12 @@ class ReaderActivity : AppCompatActivity(), EpubNavigatorFragment.Listener {
     private val viewModel: ReaderViewModel by viewModels { ReaderViewModel.factory(bookId) }
     private val bookId by lazy { intent.getStringExtra(EXTRA_BOOK_ID).orEmpty() }
     private var controlsVisible = true
+
+    /** Where the last touch went down (screen pixels): Readium doesn't say where a tapped footnote link is, so the bubble aims here */
+    private var lastTouch = Offset.Zero
+
+    /** Footnote popped up over the page */
+    private var footnote by mutableStateOf<Footnote?>(null)
 
     /** Hide the status bar while reading (a setting), show it again with the menu */
     private var hideStatusBar = false
@@ -326,7 +336,11 @@ class ReaderActivity : AppCompatActivity(), EpubNavigatorFragment.Listener {
         pageTurns.navigate = { forward, animated -> if (forward) navigator.goForward(animated) else navigator.goBackward(animated) }
         navigator.addInputListener(object : InputListener {
             override fun onTap(event: TapEvent): Boolean {
-                // A tap anywhere on the page first closes an open highlight menu
+                // A tap anywhere on the page first closes an open footnote or highlight menu
+                if (footnote != null) {
+                    footnote = null
+                    return true
+                }
                 if (viewModel.dismissMarkMenu()) return true
                 val width = navigator.publicationView.width
                 val edge = maxOf(TAP_EDGE_MIN, width * TAP_EDGE_RATIO)
@@ -363,6 +377,10 @@ class ReaderActivity : AppCompatActivity(), EpubNavigatorFragment.Listener {
             val image by viewModel.viewingImage.collectAsStateWithLifecycle()
             val panel by viewModel.panel.collectAsStateWithLifecycle()
             ReaderTheme {
+                footnote?.let {
+                    BackHandler { footnote = null }
+                    FootnoteBubble(it)
+                }
                 menu?.let { (target, current, text) ->
                     BackHandler(onBack = viewModel::closeMarkMenu)
                     // Actions that hand the text to other apps close the menu once they've started
@@ -500,6 +518,8 @@ class ReaderActivity : AppCompatActivity(), EpubNavigatorFragment.Listener {
                     navigator.currentLocator.collect {
                         viewModel.onLocationChanged(it)
                         pageTurns.pageChanged()
+                        // The note's marker has left the screen
+                        footnote = null
                     }
                 }
                 launch { viewModel.pageAnimation.collect { pageTurns.animation = it } }
@@ -733,6 +753,19 @@ class ReaderActivity : AppCompatActivity(), EpubNavigatorFragment.Listener {
             viewModel.addReadingTime((SystemClock.elapsedRealtime() - resumedAt) / 1000)
             resumedAt = 0
         }
+    }
+
+    override fun dispatchTouchEvent(event: MotionEvent): Boolean {
+        if (event.actionMasked == MotionEvent.ACTION_DOWN) lastTouch = Offset(event.rawX, event.rawY)
+        return super.dispatchTouchEvent(event)
+    }
+
+    /** A footnote pops up above its marker instead of moving to the note, which is often on the same page anyway */
+    override fun shouldFollowInternalLink(link: Link, context: HyperlinkNavigator.LinkContext?): Boolean {
+        if (context !is HyperlinkNavigator.FootnoteContext) return true
+        val html = footnoteHtml(context.noteContent) ?: return true
+        footnote = Footnote(html, lastTouch)
+        return false
     }
 
     override fun onExternalLinkActivated(url: AbsoluteUrl) {

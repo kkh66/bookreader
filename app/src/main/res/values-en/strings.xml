@@ -112,11 +112,18 @@
     <string name="moved_to_group">Moved to “%1$s”</string>
     <string name="books_moved_to_group">Moved to “%2$s”: %1$s</string>
     <string name="reading_stats">Reading statistics</string>
-    <string name="total_reading">Total reading</string>
-    <string name="books_read">Books read</string>
+    <string name="total_reading">Total</string>
+    <string name="books_read">Books</string>
     <string name="book_count">Books: %1$s</string>
-    <string name="reading_streak">Reading streak</string>
-    <string name="day_count">Days: %1$s</string>
+    <string name="reading_streak">Streak</string>
+    <plurals name="books_value">
+        <item quantity="one">%d book</item>
+        <item quantity="other">%d books</item>
+    </plurals>
+    <plurals name="days_value">
+        <item quantity="one">%d day</item>
+        <item quantity="other">%d days</item>
+    </plurals>
     <string name="reading_today">Reading today</string>
     <string name="month_day">%1$s/%2$s</string>
     <string name="minutes_short">%1$s min</string>

@@ -1,6 +1,8 @@
 package com.bookreader.app.ui.stats
 
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.text.BasicText
+import androidx.compose.foundation.text.TextAutoSize
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -8,7 +10,6 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
@@ -42,6 +43,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -85,8 +87,8 @@ fun StatsScreen(viewModel: StatsViewModel = viewModel(factory = StatsViewModel.F
             TodayCard(summary.todaySeconds, state.today)
             Row(horizontalArrangement = Arrangement.spacedBy(Space.M)) {
                 Tile(context.getString(R.string.total_reading), duration(summary.totalSeconds))
-                Tile(context.getString(R.string.books_read), context.getString(R.string.book_count, summary.bookCount))
-                Tile(context.getString(R.string.reading_streak), context.getString(R.string.day_count, summary.streakDays))
+                Tile(context.getString(R.string.books_read), context.resources.getQuantityString(R.plurals.books_value, summary.bookCount, summary.bookCount))
+                Tile(context.getString(R.string.reading_streak), context.resources.getQuantityString(R.plurals.days_value, summary.streakDays, summary.streakDays))
             }
             PeriodCard(state.chart, state.today, state.canGoBack, state.canGoForward, viewModel::setPeriod, viewModel::shift)
             CalendarCard(state.stats, state.today)
@@ -112,13 +114,19 @@ private fun TodayCard(seconds: Long, today: LocalDate) {
     }
 }
 
+/** A third of the row; a long value ("12 h 40 min") shrinks to fit rather than being cut off */
 @Composable
 private fun androidx.compose.foundation.layout.RowScope.Tile(label: String, value: String) {
     SurfaceCard(Modifier.weight(1f)) {
         Column(Modifier.padding(Space.M)) {
             Text(label, fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
             Gap(Space.XS)
-            Text(value, fontSize = 17.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            BasicText(
+                value,
+                style = TextStyle(fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface),
+                maxLines = 1,
+                autoSize = TextAutoSize.StepBased(minFontSize = 11.sp, maxFontSize = 17.sp),
+            )
         }
     }
 }
@@ -139,14 +147,15 @@ private fun PeriodCard(
     val bar = selected?.let { chart.bars.getOrNull(it) }
     SurfaceCard {
         Column(Modifier.padding(Space.L)) {
+            // The switch has its own row: next to the period's title it got squeezed in longer languages ("Y/e/a/r")
+            PeriodSwitch(chart.period, onPeriod)
+            Gap(Space.M)
             Row(verticalAlignment = Alignment.CenterVertically) {
                 PeriodArrow(context.getString(R.string.earlier), back = true, enabled = canGoBack) { onShift(-1) }
-                Text(periodTitle(chart, today), fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
+                Text(periodTitle(chart, today), fontSize = 15.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
                 PeriodArrow(context.getString(R.string.later), back = false, enabled = canGoForward) { onShift(1) }
-                Spacer(Modifier.weight(1f))
-                PeriodSwitch(chart.period, onPeriod)
             }
-            Gap(Space.S)
+            Gap(Space.XS)
             Text(duration(chart.totalSeconds), fontSize = 26.sp, fontWeight = FontWeight.Bold)
             Text(
                 if (bar != null) barSummary(bar, chart.period) else context.getString(
@@ -170,11 +179,11 @@ private fun PeriodArrow(label: String, back: Boolean, enabled: Boolean, onClick:
     }
 }
 
-/** Week / month / year segmented switch */
+/** Week / month / year segmented switch across the card, equal segments */
 @Composable
 private fun PeriodSwitch(current: StatsPeriod, onSelect: (StatsPeriod) -> Unit) {
     val context = LocalContext.current
-    Row(Modifier.clip(RoundedCornerShape(10.dp)).background(MaterialTheme.colorScheme.background).padding(2.dp)) {
+    Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(MaterialTheme.colorScheme.background).padding(2.dp)) {
         StatsPeriod.entries.forEach { period ->
             val on = period == current
             Text(
@@ -182,10 +191,12 @@ private fun PeriodSwitch(current: StatsPeriod, onSelect: (StatsPeriod) -> Unit) 
                 fontSize = 13.sp,
                 fontWeight = if (on) FontWeight.SemiBold else FontWeight.Normal,
                 color = if (on) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.clip(RoundedCornerShape(8.dp))
+                textAlign = TextAlign.Center,
+                maxLines = 1,
+                modifier = Modifier.weight(1f).clip(RoundedCornerShape(8.dp))
                     .background(if (on) MaterialTheme.colorScheme.surfaceVariant else Color.Transparent)
                     .selectable(selected = on, interactionSource = null, indication = null, role = Role.Tab) { onSelect(period) }
-                    .padding(horizontal = Space.M, vertical = Space.XS),
+                    .padding(vertical = Space.S),
             )
         }
     }

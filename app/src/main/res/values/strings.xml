@@ -116,7 +116,14 @@
     <string name="books_read">阅读书籍</string>
     <string name="book_count">%1$s 本</string>
     <string name="reading_streak">连续阅读</string>
-    <string name="day_count">%1$s 天</string>
+    <plurals name="books_value">
+        <item quantity="one">%d 本</item>
+        <item quantity="other">%d 本</item>
+    </plurals>
+    <plurals name="days_value">
+        <item quantity="one">%d 天</item>
+        <item quantity="other">%d 天</item>
+    </plurals>
     <string name="reading_today">今日阅读</string>
     <string name="month_day">%1$s月%2$s日</string>
     <string name="minutes_short">%1$s分</string>
