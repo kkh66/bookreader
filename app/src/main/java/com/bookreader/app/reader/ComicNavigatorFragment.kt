@@ -14,10 +14,12 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.PagerState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Modifier
@@ -31,6 +33,7 @@ import androidx.compose.ui.platform.ViewCompositionStrategy
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.lifecycleScope
 import com.bookreader.app.data.decodeScaledBitmap
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -103,12 +106,20 @@ internal class ComicNavigatorFragment(
 
     private val listeners = mutableListOf<InputListener>()
 
+    /** The pages' composition scope: it has the frame clock animated turns need, which lifecycleScope lacks (it'd crash) */
+    private var turnScope: CoroutineScope? = null
+
     override val publicationView: View get() = requireView()
 
     override fun onCreateView(inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?): View {
         val pages = ComposeView(requireContext()).apply {
             setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed)
             setContent {
+                val scope = rememberCoroutineScope()
+                DisposableEffect(scope) {
+                    turnScope = scope
+                    onDispose { turnScope = null }
+                }
                 HorizontalPager(pager, Modifier.fillMaxSize(), beyondViewportPageCount = 1, reverseLayout = reversed) { Page(it) }
             }
         }
@@ -177,7 +188,10 @@ internal class ComicNavigatorFragment(
     /** Turns to [page], returning false when the book has no such page */
     private fun turnTo(page: Int, animated: Boolean): Boolean {
         if (page !in publication.readingOrder.indices) return false
-        lifecycleScope.launch { if (animated) pager.animateScrollToPage(page) else pager.scrollToPage(page) }
+        // Before the pages are composed there's no frame clock: jump there without animating
+        val scope = turnScope
+        if (scope == null) lifecycleScope.launch { pager.scrollToPage(page) }
+        else scope.launch { if (animated) pager.animateScrollToPage(page) else pager.scrollToPage(page) }
         return true
     }
 
