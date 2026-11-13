@@ -18,8 +18,8 @@ android {
         applicationId = "com.bookreader.app"
         minSdk = 24
         targetSdk = 37
-        versionCode = 26
-        versionName = "0.4.6"
+        versionCode = 27
+        versionName = "0.4.7"
     }
 
     signingConfigs {
