@@ -1,13 +1,17 @@
 package com.bookreader.app.data.opds
 
+import android.Manifest
 import android.content.Context
+import android.content.pm.PackageManager
 import android.graphics.Bitmap
+import android.os.Build
 import androidx.core.content.ContextCompat
 import com.bookreader.app.R
 import com.bookreader.app.data.OpdsLibrary
 import com.bookreader.app.data.decodeScaledBitmap
 import java.io.IOException
 import java.io.InputStream
+import java.net.SocketTimeoutException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.Credentials
@@ -49,7 +53,12 @@ class OpdsRepository(private val client: OkHttpClient, private val context: Cont
                 header("Authorization", Credentials.basic(library.username, library.password, Charsets.UTF_8))
             }
         }.build()
-        val response = client.newCall(request).execute()
+        val response = try {
+            client.newCall(request).execute()
+        } catch (e: SocketTimeoutException) {
+            // Without local network access Android 17+ silently drops LAN traffic: name the cause instead of a bare timeout
+            throw if (context.localNetworkBlocked()) IOException(strings.getString(R.string.local_network_permission_needed), e) else e
+        }
         if (!response.isSuccessful) {
             response.close()
             throw IOException(
@@ -59,3 +68,11 @@ class OpdsRepository(private val client: OkHttpClient, private val context: Cont
         return response
     }
 }
+
+/**
+ * Android 17+ drops traffic to LAN addresses (connections just time out) until the user grants ACCESS_LOCAL_NETWORK;
+ * true while that permission is missing
+ */
+fun Context.localNetworkBlocked(): Boolean =
+    Build.VERSION.SDK_INT >= 37 &&
+        ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_LOCAL_NETWORK) != PackageManager.PERMISSION_GRANTED

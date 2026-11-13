@@ -2,6 +2,8 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- Android 17+: libraries on the LAN are unreachable without it; requested when connecting to a library -->
+    <uses-permission android:name="android.permission.ACCESS_LOCAL_NETWORK" />
 
     <!-- Dictionary / translate apps for selected text (Android 11+ package visibility) -->
     <queries>

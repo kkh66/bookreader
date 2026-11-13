@@ -103,6 +103,7 @@ fun LibraryEditScreen(
     LaunchedEffect(address.toUrl(), username, password) { viewModel.clearTest() }
     val sheet = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val scope = rememberCoroutineScope()
+    val withLocalNetwork = rememberLocalNetworkAccess()
 
     /** Address field input: a pasted full URL (or several characters at once, like host:port) is split into the fields; normal typing only changes the address */
     fun changeHost(text: String) {
@@ -242,7 +243,7 @@ fun LibraryEditScreen(
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(Space.S), verticalAlignment = Alignment.CenterVertically) {
                     // Tries the address and account as typed, before saving
                     OutlinedButton(
-                        onClick = { viewModel.test(address.toUrl(), username, password) },
+                        onClick = { withLocalNetwork { viewModel.test(address.toUrl(), username, password) } },
                         enabled = address.valid && test != TestResult.Running,
                         shape = CircleShape,
                         contentPadding = PaddingValues(horizontal = Space.L),

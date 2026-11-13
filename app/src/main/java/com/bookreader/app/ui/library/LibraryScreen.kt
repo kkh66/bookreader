@@ -62,7 +62,8 @@ fun LibraryScreen(
         viewModel.searchUrl(query)?.takeIf { query.isNotBlank() }?.let { onBrowse(it, context.getString(R.string.search_title, query.trim())) }
     }
 
-    LaunchedEffect(libraryId, revision) { viewModel.start(libraryId) }
+    val withLocalNetwork = rememberLocalNetworkAccess()
+    LaunchedEffect(libraryId, revision) { withLocalNetwork { viewModel.start(libraryId) } }
     BackHandler(onBack = if (searching) closeSearch else onExit)
 
     LazyColumn(Modifier.fillMaxSize()) {
@@ -92,7 +93,7 @@ fun LibraryScreen(
         }
         if (state.loading) item { LinearProgressIndicator(Modifier.fillMaxWidth().padding(horizontal = PagePadding)) }
         state.error?.let { error ->
-            item { ErrorCard(error, onRetry = viewModel::refresh, onEdit = onEdit) }
+            item { ErrorCard(error, onRetry = { withLocalNetwork(viewModel::refresh) },onEdit = onEdit) }
         }
         items(state.folders) { folder ->
             IconTileRow(

@@ -47,6 +47,7 @@
     <string name="brightness_auto">Auto</string>
     <string name="authentication_failed">Authentication failed. Check your username and password</string>
     <string name="http_failed">Request failed: HTTP %1$s</string>
+    <string name="local_network_permission_needed">Connection timed out. Libraries on your local network need the Nearby devices permission; allow it for this app in system settings</string>
     <string name="done">Done</string>
     <string name="text_settings">Text</string>
     <string name="page_turn">Page turns</string>

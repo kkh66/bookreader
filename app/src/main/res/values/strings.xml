@@ -47,6 +47,7 @@
     <string name="brightness_auto">自动</string>
     <string name="authentication_failed">认证失败，请检查用户名和密码</string>
     <string name="http_failed">请求失败: HTTP %1$s</string>
+    <string name="local_network_permission_needed">连接超时。访问局域网书库需要“附近设备”权限，请在系统设置中为本应用开启</string>
     <string name="done">完成</string>
     <string name="text_settings">文字</string>
     <string name="page_turn">翻页</string>
