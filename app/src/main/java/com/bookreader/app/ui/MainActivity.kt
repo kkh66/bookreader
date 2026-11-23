@@ -71,6 +71,7 @@ import com.bookreader.app.ui.shelf.ShelfViewModel
 import com.bookreader.app.ui.stats.StatsScreen
 import com.bookreader.app.ui.theme.AppIcons
 import com.bookreader.app.ui.theme.BookReaderTheme
+import com.bookreader.app.ui.update.UpdateDialog
 
 class MainViewModel(settings: SettingsRepository) : ViewModel() {
     val themeMode = settings.themeMode
@@ -216,6 +217,7 @@ private fun AppRoot() {
             },
         )
     }
+    UpdateDialog()
 }
 
 /** Compact bottom bar: icon + small label, 56dp tall (excluding the system navigation bar) */

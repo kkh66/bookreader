@@ -18,11 +18,14 @@ class MeViewModel(
 
     val themeMode = settings.themeMode
     val startupAnimation = settings.startupAnimation.state
+    val autoUpdateCheck = settings.autoUpdateCheck.state
     val libraries = libraries.libraries
 
     fun setThemeMode(mode: ThemeMode) = settings.setThemeMode(mode)
 
     fun setStartupAnimation(enabled: Boolean) = settings.startupAnimation.set(enabled)
+
+    fun setAutoUpdateCheck(enabled: Boolean) = settings.autoUpdateCheck.set(enabled)
 
     fun setLanguage(language: String) = AppCompatDelegate.setApplicationLocales(LocaleListCompat.forLanguageTags(language))
 

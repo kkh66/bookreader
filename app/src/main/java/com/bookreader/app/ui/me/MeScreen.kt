@@ -42,6 +42,7 @@ import com.bookreader.app.ui.components.Space
 import com.bookreader.app.ui.components.SurfaceCard
 import com.bookreader.app.ui.components.ToggleRow
 import com.bookreader.app.ui.theme.AppIcons
+import com.bookreader.app.ui.update.UpdateViewModel
 
 /**
  * "Me" tab: just the reading, libraries and app entries plus the version; each entry opens its own page of options
@@ -54,10 +55,12 @@ fun MeScreen(
     onOpenStats: () -> Unit,
     onOpenReadingStyle: () -> Unit,
     viewModel: MeViewModel = viewModel(factory = MeViewModel.Factory),
+    updates: UpdateViewModel = viewModel(factory = UpdateViewModel.Factory),
 ) {
     val context = LocalContext.current
     val themeMode by viewModel.themeMode.collectAsStateWithLifecycle()
     val startupAnimation by viewModel.startupAnimation.collectAsStateWithLifecycle()
+    val autoUpdateCheck by viewModel.autoUpdateCheck.collectAsStateWithLifecycle()
     val libraries by viewModel.libraries.collectAsStateWithLifecycle()
     var choosingTheme by remember { mutableStateOf(false) }
     var choosingLanguage by remember { mutableStateOf(false) }
@@ -84,7 +87,10 @@ fun MeScreen(
                         }
                         Gap(Space.XL)
                         SurfaceCard {
-                            SettingRow(AppIcons.Info, context.getString(R.string.version), onClick = null, value = BuildConfig.VERSION_NAME, showDivider = false)
+                            SettingRow(
+                                AppIcons.Info, context.getString(R.string.version), value = BuildConfig.VERSION_NAME,
+                                subtitle = stringResource(R.string.update_check), onClick = { updates.check(manual = true) }, showDivider = false,
+                            )
                         }
                     }
                 }
@@ -113,6 +119,10 @@ fun MeScreen(
                             ToggleRow(
                                 startupAnimation, stringResource(R.string.startup_animation),
                                 stringResource(R.string.startup_animation_hint), viewModel::setStartupAnimation,
+                            )
+                            ToggleRow(
+                                autoUpdateCheck, stringResource(R.string.auto_update_check),
+                                stringResource(R.string.auto_update_check_hint), viewModel::setAutoUpdateCheck,
                             )
                         }
                         SettingRow(

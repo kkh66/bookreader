@@ -280,4 +280,14 @@
     <string name="choose_file">Choose file</string>
     <string name="not_the_same_book">That isn’t the original book’s file</string>
     <string name="book_library_missing">Couldn’t find this book’s library. Add the library first.</string>
+    <string name="auto_update_check">Check for updates automatically</string>
+    <string name="auto_update_check_hint">Look for a new version on GitHub when the app starts</string>
+    <string name="update_check">Check for updates</string>
+    <string name="update_available">Update available</string>
+    <string name="update_version">Version %1$s, %2$s</string>
+    <string name="update_now">Update</string>
+    <string name="update_install">Install</string>
+    <string name="update_later">Later</string>
+    <string name="update_latest">You have the latest version</string>
+    <string name="update_failed">Could not check or download the update</string>
 </resources>

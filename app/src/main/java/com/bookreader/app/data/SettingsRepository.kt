@@ -113,6 +113,9 @@ class SettingsRepository(context: Context) {
 
     val startupAnimation = Toggle("startup_animation", default = true)
 
+    /** Look for a new release on GitHub each time the app starts */
+    val autoUpdateCheck = Toggle("auto_update_check", default = true)
+
     /** Hide the system status bar while reading, show it again with the menu */
     val readerHideStatusBar = Toggle("reader_hide_status_bar", default = true)
 

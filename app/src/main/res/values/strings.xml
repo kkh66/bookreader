@@ -280,4 +280,14 @@
     <string name="choose_file">选择文件</string>
     <string name="not_the_same_book">这不是原来那本书的文件</string>
     <string name="book_library_missing">找不到这本书所在的书库，请先添加书库</string>
+    <string name="auto_update_check">自动检查更新</string>
+    <string name="auto_update_check_hint">启动时检查 GitHub 上的新版本</string>
+    <string name="update_check">检查更新</string>
+    <string name="update_available">发现新版本</string>
+    <string name="update_version">版本 %1$s，大小 %2$s</string>
+    <string name="update_now">更新</string>
+    <string name="update_install">安装</string>
+    <string name="update_later">以后再说</string>
+    <string name="update_latest">已是最新版本</string>
+    <string name="update_failed">检查或下载更新失败</string>
 </resources>
